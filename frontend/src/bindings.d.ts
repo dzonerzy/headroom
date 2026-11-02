@@ -136,6 +136,25 @@ interface Removed {
   files: number;
 }
 
+interface Found {
+  node: number;
+  name: string;
+  path: string;
+  size: number;
+  folder: boolean;
+  parent: number;
+}
+
+interface Entry {
+  node: number;
+  name: string;
+  kind: Kind;
+  size: number;
+  files: number;
+  color: string | null;
+  opens: boolean;
+}
+
 interface Removal {
   node: number;
   name: string;
@@ -181,6 +200,8 @@ interface AppErrors {
   highlight: never;
   removeMany: "NoScan" | "Stale";
   emptyBin: "AccessDenied" | "Canceled" | "OutOfMemory" | "FileNotFound" | "NotDir" | "NoScan" | "Stale" | "InUse" | "NotFound" | "TrashUnavailable" | "Failed";
+  search: "OutOfMemory";
+  entries: "OutOfMemory" | "NoScan";
   removal: "OutOfMemory" | "NoScan" | "NotFound";
   remove: "AccessDenied" | "OutOfMemory" | "NoScan" | "Stale" | "InUse" | "NotFound" | "TrashUnavailable" | "Failed" | "Refused";
   watching: never;
@@ -222,6 +243,10 @@ interface AppBindings {
   removeMany(arg1: number[], arg2: number, arg3: Mode): Promise<Cleaned>;
   /** Fails with PlumeError<AppErrors["emptyBin"]>. */
   emptyBin(arg1: number, arg2: number): Promise<Removed>;
+  /** Fails with PlumeError<AppErrors["search"]>. */
+  search(arg1: string): Found[];
+  /** Fails with PlumeError<AppErrors["entries"]>. */
+  entries(arg1: number): Entry[];
   /** Fails with PlumeError<AppErrors["removal"]>. */
   removal(arg1: number): Removal;
   /** Fails with PlumeError<AppErrors["remove"]>. */

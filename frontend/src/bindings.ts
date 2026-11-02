@@ -146,6 +146,25 @@ export interface Removed {
   files: number;
 }
 
+export interface Found {
+  node: number;
+  name: string;
+  path: string;
+  size: number;
+  folder: boolean;
+  parent: number;
+}
+
+export interface Entry {
+  node: number;
+  name: string;
+  kind: Kind;
+  size: number;
+  files: number;
+  color: string | null;
+  opens: boolean;
+}
+
 export interface Removal {
   node: number;
   name: string;
@@ -191,6 +210,8 @@ export interface AppErrors {
   highlight: never;
   removeMany: "NoScan" | "Stale";
   emptyBin: "AccessDenied" | "Canceled" | "OutOfMemory" | "FileNotFound" | "NotDir" | "NoScan" | "Stale" | "InUse" | "NotFound" | "TrashUnavailable" | "Failed";
+  search: "OutOfMemory";
+  entries: "OutOfMemory" | "NoScan";
   removal: "OutOfMemory" | "NoScan" | "NotFound";
   remove: "AccessDenied" | "OutOfMemory" | "NoScan" | "Stale" | "InUse" | "NotFound" | "TrashUnavailable" | "Failed" | "Refused";
   watching: never;
@@ -232,6 +253,10 @@ export interface AppBindings {
   removeMany(arg1: number[], arg2: number, arg3: Mode): Promise<Cleaned>;
   /** Fails with PlumeError<AppErrors["emptyBin"]>. */
   emptyBin(arg1: number, arg2: number): Promise<Removed>;
+  /** Fails with PlumeError<AppErrors["search"]>. */
+  search(arg1: string): Found[];
+  /** Fails with PlumeError<AppErrors["entries"]>. */
+  entries(arg1: number): Entry[];
   /** Fails with PlumeError<AppErrors["removal"]>. */
   removal(arg1: number): Removal;
   /** Fails with PlumeError<AppErrors["remove"]>. */
@@ -452,6 +477,12 @@ export const App: AppBindings = {
   },
   emptyBin(arg1, arg2) {
     return native.emptyBin(arg1, arg2).catch((error: unknown) => { throw plumeError(error); });
+  },
+  search(arg1) {
+    try { return native.search(arg1); } catch (error) { throw plumeError(error); }
+  },
+  entries(arg1) {
+    try { return native.entries(arg1); } catch (error) { throw plumeError(error); }
   },
   removal(arg1) {
     try { return native.removal(arg1); } catch (error) { throw plumeError(error); }

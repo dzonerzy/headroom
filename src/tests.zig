@@ -122,6 +122,42 @@ test "what changed since the last scan" {
     try h.expectText(".changes-detail", "new");
 }
 
+test "finding by name, and the list" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try write(tmp.dir, "big/engine.zig", 400_000);
+    try write(tmp.dir, "big/deep/engine-notes.md", 50_000);
+    try write(tmp.dir, "other/photo.png", 300_000);
+    const root = try tmp.dir.realPathFileAlloc(std.testing.io, ".", std.testing.allocator);
+    defer std.testing.allocator.free(root);
+
+    const h = try plume.testing.Harness.startProject(@import("plume_project"), .{ .width = 1200, .height = 780 });
+    defer h.stop();
+    var map: Map = .{ .window = null, .io = std.testing.io };
+    defer map.deinit(std.heap.smp_allocator);
+    var state: App = .{ .io = std.testing.io, .home_path = root, .map = &map };
+    defer state.deinit();
+    state.events = h.app.events(App.Events);
+    try h.app.bind("App", App, &state);
+    try h.open();
+    try h.click(".stage .control-main");
+    try h.waitFor(".search-field");
+
+    // Two entries hold "ENGINE" (any case), the biggest first; Enter goes there.
+    try h.typeText(".search-field", "ENGINE");
+    try h.waitUntil("document.querySelectorAll('.search-result').length === 2");
+    try h.expectText(".search-result:first-child .search-name", "engine.zig");
+    try h.press("Enter", .{});
+    try h.waitUntil("document.querySelector('.crumb[aria-current]')?.textContent === 'big'");
+
+    // The list: what big holds, biggest first; a folder opens.
+    try h.click(".viewswitch-option:nth-child(2)");
+    try h.waitFor(".listing-row");
+    try h.expectText(".listing-row .listing-name", "engine.zig");
+    try h.evaluate(void, "[...document.querySelectorAll('.listing-row')].find((r) => r.querySelector('.listing-name').textContent === 'deep').click()");
+    try h.waitUntil("document.querySelector('.crumb[aria-current]')?.textContent === 'deep'");
+}
+
 test "the tray's popover" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();

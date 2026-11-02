@@ -668,6 +668,108 @@ pub const App = struct {
         return freed;
     }
 
+    pub const Found = struct {
+        node: u32,
+        name: []const u8,
+        /// From the folder scanned.
+        path: []const u8,
+        size: u64,
+        folder: bool,
+        /// Where the map goes for it.
+        parent: u32,
+    };
+
+    /// Entries whose name holds `query` (any case), the biggest first, at
+    /// most 50.
+    pub fn search(self: *App, allocator: std.mem.Allocator, query: []const u8) error{OutOfMemory}![]const Found {
+        self.lock.lockUncancelable(self.io);
+        defer self.lock.unlock(self.io);
+        const tree = &(self.tree orelse return &.{});
+        const q = std.mem.trim(u8, query, " ");
+        if (q.len < 2) return &.{};
+        const limit = 50;
+        // The biggest matches kept, smallest last.
+        var best: std.ArrayList(u32) = .empty;
+        defer best.deinit(gpa);
+        for (tree.nodes.items[1..], 1..) |n, i| {
+            if (n.size == 0) continue;
+            if (best.items.len == limit and n.size <= tree.node(best.items[limit - 1]).size) continue;
+            if (std.ascii.findIgnoreCase(tree.name(@intCast(i)), q) == null) continue;
+            const at = for (best.items, 0..) |b, k| {
+                if (n.size > tree.node(b).size) break k;
+            } else best.items.len;
+            try best.insert(gpa, at, @intCast(i));
+            if (best.items.len > limit) _ = best.pop();
+        }
+        const out = try allocator.alloc(Found, best.items.len);
+        for (best.items, out) |node, *f| {
+            const n = tree.node(node);
+            f.* = .{
+                .node = node,
+                .name = try allocator.dupe(u8, tree.name(node)),
+                .path = try relative(allocator, tree, node),
+                .size = n.size,
+                .folder = n.kind == .directory,
+                .parent = n.parent,
+            };
+        }
+        return out;
+    }
+
+    pub const Entry = struct {
+        node: u32,
+        name: []const u8,
+        kind: Kind,
+        size: u64,
+        files: u64,
+        /// The legend's color for a file; null for folders and the rest.
+        color: ?[]const u8,
+        opens: bool,
+    };
+
+    /// What `node` holds, the biggest first (the list beside the map), at
+    /// most 1,000.
+    pub fn entries(self: *App, allocator: std.mem.Allocator, node: u32) error{ NoScan, OutOfMemory }![]const Entry {
+        self.lock.lockUncancelable(self.io);
+        defer self.lock.unlock(self.io);
+        const tree = &(self.tree orelse return error.NoScan);
+        if (node >= tree.nodes.items.len) return &.{};
+        const n = tree.node(node);
+        var order: std.ArrayList(u32) = .empty;
+        defer order.deinit(gpa);
+        for (tree.children(node), 0..) |child, i| {
+            if (child.size == 0) continue;
+            try order.append(gpa, n.first_child + @as(u32, @intCast(i)));
+        }
+        std.mem.sort(u32, order.items, tree, struct {
+            fn bigger(t: *const scanner.Tree, l: u32, r: u32) bool {
+                return t.node(l).size > t.node(r).size;
+            }
+        }.bigger);
+        const kept = order.items[0..@min(order.items.len, 1000)];
+        const out = try allocator.alloc(Entry, kept.len);
+        for (kept, out) |index, *e| {
+            const c = tree.node(index);
+            const file = c.kind == .file;
+            e.* = .{
+                .node = index,
+                .name = try allocator.dupe(u8, tree.name(index)),
+                .kind = switch (c.kind) {
+                    .directory => .folder,
+                    .file => .file,
+                    .link => .link,
+                    .mount => .mount,
+                    .other => .other,
+                },
+                .size = c.size,
+                .files = c.files,
+                .color = if (file) try hex(allocator, categories.info.get(categories.of(tree.name(index))).color) else null,
+                .opens = c.kind == .directory and c.child_count > 0,
+            };
+        }
+        return out;
+    }
+
     /// What deleting `node` means: refused (and why), warned about, or fine.
     pub fn removal(self: *App, allocator: std.mem.Allocator, node: u32) error{ NoScan, NotFound, OutOfMemory }!Removal {
         self.lock.lockUncancelable(self.io);

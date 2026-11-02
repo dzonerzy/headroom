@@ -5,6 +5,7 @@ import { bytes, compact, exact, plural, seconds, share } from "./format";
 import { Mark, Meter } from "./Meter";
 import { bin, ConfirmRemove, type Mode } from "./Remove";
 import { ConfirmGroup, SidePanel, type Tab } from "./Reclaim";
+import { ListView, Search } from "./Find";
 import type { Changed, Group, Place, Reclaim, Removal } from "./bindings";
 
 type Phase =
@@ -34,6 +35,7 @@ export default function Root() {
   const [changed, setChanged] = useState<Changed | null>(null);
   const [panel, setPanel] = useState(false);
   const [tab, setTab] = useState<Tab>("reclaim");
+  const [listing, setListing] = useState(false);
   const [groupConfirm, setGroupConfirm] = useState<{ group: Group; busy: boolean; error: string | null } | null>(null);
 
   function openPanel(open: boolean, on: Tab = tab) {
@@ -287,6 +289,8 @@ export default function Root() {
 
   useEffect(() => {
     function key(event: KeyboardEvent) {
+      // Typing in a field is not a command.
+      if (event.target instanceof HTMLInputElement) return;
       if (confirm) {
         if (event.key === "Escape" && !confirm.busy) setConfirm(null);
         return;
@@ -309,7 +313,7 @@ export default function Root() {
   }
 
   function move(event: MouseEvent) {
-    if (!view) return;
+    if (!view || listing) return;
     const { x, y } = where(event);
     const item = App.hover(x, y);
     setHovered(item ? { ...item, x, y } : null);
@@ -321,7 +325,7 @@ export default function Root() {
   }
 
   function click(event: MouseEvent) {
-    if (event.button !== 0 || !view) return;
+    if (event.button !== 0 || !view || listing) return;
     const { x, y } = where(event);
     const item = App.hover(x, y);
     if (item?.opens) show(item.node);
@@ -329,7 +333,7 @@ export default function Root() {
 
   async function menu(event: MouseEvent) {
     event.preventDefault();
-    if (!view) return;
+    if (!view || listing) return;
     const { x, y } = where(event);
     const item = App.hover(x, y);
     if (!item) return;
@@ -393,6 +397,7 @@ export default function Root() {
               <span className="crumb-idle">{scanning ? phase.path : "No folder scanned"}</span>
             )}
           </nav>
+          {view && <Search onPick={(found) => goTo({ node: found.node, parent: found.parent, path: found.path, size: found.size })} />}
           <div className="deck-actions">
             {changed && Math.abs(changed.after - changed.before) >= 64 * 1024 * 1024 && (
               <button
@@ -455,6 +460,25 @@ export default function Root() {
         data-pointer={hovered?.opens ? "open" : undefined}
       >
         {view && (
+          <div
+            className="viewswitch"
+            role="radiogroup"
+            aria-label="Show as"
+            onClick={(event) => event.stopPropagation()}
+            onMouseMove={(event) => event.stopPropagation()}
+          >
+            <button role="radio" aria-checked={!listing} className="viewswitch-option" onClick={() => setListing(false)}>
+              Map
+            </button>
+            <button role="radio" aria-checked={listing} className="viewswitch-option" onClick={() => setListing(true)}>
+              List
+            </button>
+          </div>
+        )}
+        {view && listing && (
+          <ListView view={view} onOpen={(node) => show(node)} onHover={(node) => (node === null ? App.hover(-1, 0) : App.highlight(node))} />
+        )}
+        {view && !listing && (
           <div className="labels" data-shown={labelsShown ? "" : undefined} aria-hidden="true">
             {view.labels.map((label, i) => (
               <MapLabel key={`${view.node}-${i}`} label={label} />

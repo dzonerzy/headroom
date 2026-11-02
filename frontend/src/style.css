@@ -1401,6 +1401,196 @@
   }
 }
 
+@layer components {
+  /* Finding by name, in the deck. */
+  .search {
+    position: relative;
+    flex: 0 1 15rem;
+    min-width: 9rem;
+  }
+
+  .search-field {
+    width: 100%;
+    border: 1px solid #2a394a;
+    border-radius: 6px;
+    background: #0f1720;
+    padding: 0.38rem 0.7rem;
+    font-size: 0.92rem;
+    outline: none;
+  }
+
+  .search-field:focus {
+    border-color: color-mix(in oklab, var(--level) 55%, #2a394a);
+  }
+
+  .search-field::placeholder {
+    color: #5f6f82;
+  }
+
+  .search-results {
+    position: absolute;
+    top: calc(100% + 0.35rem);
+    right: 0;
+    z-index: 8;
+    width: min(30rem, 70vw);
+    max-height: 26rem;
+    overflow-y: auto;
+    border: 1px solid #2a394a;
+    border-radius: 8px;
+    background: rgb(14 21 30 / 0.98);
+    padding: 0.3rem;
+    box-shadow: 0 14px 34px rgb(0 0 0 / 0.5);
+  }
+
+  .search-result {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.1rem 0.6rem;
+    border-radius: 5px;
+    padding: 0.4rem 0.55rem;
+    cursor: pointer;
+  }
+
+  .search-result[aria-selected="true"] {
+    background: rgb(255 255 255 / 0.06);
+  }
+
+  .search-name {
+    overflow: hidden;
+    font-weight: 620;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .search-size {
+    color: var(--quiet);
+  }
+
+  .search-path {
+    grid-column: 1 / -1;
+    overflow: hidden;
+    color: var(--quiet);
+    font-size: 0.8rem;
+    direction: rtl;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    unicode-bidi: plaintext;
+  }
+
+  .search-none {
+    padding: 0.5rem 0.6rem;
+    color: var(--quiet);
+  }
+
+  /* Map or list, over the map's corner. */
+  .viewswitch {
+    position: absolute;
+    top: 0.55rem;
+    right: 0.6rem;
+    z-index: 3;
+    display: flex;
+    overflow: hidden;
+    border: 1px solid #2a394a;
+    border-radius: 6px;
+    background: rgb(14 21 30 / 0.92);
+  }
+
+  .viewswitch-option {
+    padding: 0.2rem 0.65rem;
+    color: var(--quiet);
+    font-size: 0.82rem;
+    cursor: pointer;
+  }
+
+  .viewswitch-option + .viewswitch-option {
+    border-left: 1px solid #2a394a;
+  }
+
+  .viewswitch-option[aria-checked="true"] {
+    background: color-mix(in oklab, var(--level) 16%, transparent);
+    color: var(--ink);
+  }
+
+  /* The list, over the map. */
+  .listing {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    overflow-y: auto;
+    background: var(--night);
+    padding: 2.6rem 1.25rem 1rem;
+  }
+
+  .listing-rows {
+    display: grid;
+    gap: 0.1rem;
+    max-width: 64rem;
+  }
+
+  .listing-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto 6.5rem;
+    align-items: center;
+    gap: 0.25rem 0.75rem;
+    width: 100%;
+    border-radius: 6px;
+    padding: 0.45rem 0.6rem 0.5rem;
+    text-align: left;
+  }
+
+  .listing-row:hover,
+  .listing-row:focus-visible {
+    background: rgb(255 255 255 / 0.05);
+  }
+
+  .listing-row[data-opens] {
+    cursor: pointer;
+  }
+
+  .listing-mark {
+    width: 0.65rem;
+    height: 0.65rem;
+    border-radius: 2px;
+    background: #5a6779;
+  }
+
+  .listing-mark[data-folder] {
+    background: #34465b;
+    box-shadow: inset 0 2px 0 #4b607a;
+  }
+
+  .listing-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .listing-files {
+    color: var(--quiet);
+    font-size: 0.82rem;
+  }
+
+  .listing-size {
+    font-weight: 650;
+    text-align: right;
+  }
+
+  .listing-track {
+    grid-column: 2 / -1;
+    height: 3px;
+    border-radius: 2px;
+    background: #16202b;
+  }
+
+  .listing-bar {
+    display: block;
+    height: 100%;
+    border-radius: 2px;
+    background: color-mix(in oklab, var(--level) 70%, #16202b);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .segment,
   .labels {
