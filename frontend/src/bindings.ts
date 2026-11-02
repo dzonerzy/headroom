@@ -10,26 +10,99 @@ export class PlumeError<Code extends string = string> extends Error {
   }
 }
 
-export interface Greeting {
-  text: string;
-  number: number;
+export interface Space {
+  total: number;
+  free: number;
 }
 
+export interface Scanned {
+  path: string;
+  size: number;
+  files: number;
+  entries: number;
+  unreadable: number;
+  ms: number;
+}
+
+export interface View {
+  node: number;
+  path: string;
+  crumbs: Crumb[];
+  size: number;
+  files: number;
+  labels: Label[];
+  legend: Legend[];
+  zoom_ms: number;
+}
+
+export interface Crumb {
+  node: number;
+  name: string;
+}
+
+export interface Label {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  node: number;
+  shape: Shape;
+  name: string;
+  size: number;
+  count: number;
+  depth: number;
+}
+
+export type Shape = "folder" | "closed" | "file" | "rest";
+
+export interface Legend {
+  name: string;
+  color: string;
+  size: number;
+}
+
+export interface Item {
+  node: number;
+  kind: Kind;
+  name: string;
+  path: string;
+  size: number;
+  files: number;
+  count: number;
+  category: Legend | null;
+  share: number;
+  unreadable: boolean;
+  opens: boolean;
+}
+
+export type Kind = "folder" | "file" | "link" | "mount" | "other" | "rest";
+
 export interface Progress {
-  done: number;
-  total: number;
+  files: number;
+  folders: number;
+  bytes: number;
+  unreadable: number;
 }
 
 export interface AppErrors {
-  greet: "OutOfMemory";
-  countTo: "Canceled";
+  home: never;
+  space: never;
+  scan: "AccessDenied" | "Canceled" | "OutOfMemory" | "FileNotFound" | "NotDir" | "Busy";
+  cancelScan: never;
+  view: "OutOfMemory" | "NoScan" | "NotAFolder";
+  hover: "OutOfMemory";
 }
 
 export interface AppBindings {
-  /** Fails with PlumeError<AppErrors["greet"]>. */
-  greet(arg1: string): Greeting;
-  /** Fails with PlumeError<AppErrors["countTo"]>. */
-  countTo(arg1: number): Promise<number>;
+  home(): string;
+  space(arg1: string): Space | null;
+  /** Fails with PlumeError<AppErrors["scan"]>. */
+  scan(arg1: string): Promise<Scanned>;
+  cancelScan(): void;
+  /** Fails with PlumeError<AppErrors["view"]>. */
+  view(arg1: number, arg2: number, arg3: number, arg4: number, arg5: number, arg6: number): View;
+  /** Fails with PlumeError<AppErrors["hover"]>. */
+  hover(arg1: number, arg2: number): Item | null;
 }
 
 // The page runtime: the window, dialogs, clipboard, screens and menus.
@@ -177,10 +250,22 @@ function plumeError(error: unknown): unknown {
 }
 
 export const App: AppBindings = {
-  greet(arg1) {
-    try { return native.greet(arg1); } catch (error) { throw plumeError(error); }
+  home() {
+    try { return native.home(); } catch (error) { throw plumeError(error); }
   },
-  countTo(arg1) {
-    return native.countTo(arg1).catch((error: unknown) => { throw plumeError(error); });
+  space(arg1) {
+    try { return native.space(arg1); } catch (error) { throw plumeError(error); }
+  },
+  scan(arg1) {
+    return native.scan(arg1).catch((error: unknown) => { throw plumeError(error); });
+  },
+  cancelScan() {
+    try { return native.cancelScan(); } catch (error) { throw plumeError(error); }
+  },
+  view(arg1, arg2, arg3, arg4, arg5, arg6) {
+    try { return native.view(arg1, arg2, arg3, arg4, arg5, arg6); } catch (error) { throw plumeError(error); }
+  },
+  hover(arg1, arg2) {
+    try { return native.hover(arg1, arg2); } catch (error) { throw plumeError(error); }
   },
 };

@@ -1,257 +1,468 @@
 @import "tailwindcss";
-/* Recursive, every axis: linear for the interface, casual for Zig's answers,
-   mono for code. Bundled by Vite: the app needs no network for its fonts. */
-@import "@fontsource-variable/recursive/full.css";
+/* Archivo, weight and width: expanded for the meter's figures, condensed for
+   the names on the map, normal for the rest. Bundled: no network needed. */
+@import "@fontsource-variable/archivo/wdth.css";
 
-/* A blue jay's feather: cobalt over cool white, or under a night sky. */
+/* A mixing console at night: the disk is the signal, free space the
+   headroom, the last tenth the clip zone. The map's own background is the
+   GL layer's (src/map.zig, 0x0d141c): the page is transparent over it. */
 :root {
-  color-scheme: light dark;
-  --down: #f2f5fa;
-  --ink: #1a2233;
-  --jay: #2b59d9;
-  --sky: #dce6fb;
-  --quill: #667089;
-  --rule: #d5dce8;
-  --on-jay: #ffffff;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --down: #0e1526;
-    --ink: #e6ebf5;
-    --jay: #86a8ff;
-    --sky: #1c2a4a;
-    --quill: #8e98ae;
-    --rule: #24304b;
-    --on-jay: #0e1526;
-  }
+  color-scheme: dark;
+  --night: #0d141c;
+  --plate: #111a24;
+  --ink: #e3e9f0;
+  --quiet: #8696a9;
+  --rule: #1f2b38;
+  --level: #52c7a2;
+  --dim: #2e3d50;
+  --unlit: #18232e;
+  --clip: #ff5b4f;
 }
 
 @theme {
-  --font-sans: "Recursive Variable", ui-sans-serif, system-ui, sans-serif;
-  /* The same family: its MONO axis makes it monospaced (see code below). */
-  --font-mono: "Recursive Variable", ui-monospace, monospace;
-}
-
-@theme inline {
-  --color-down: var(--down);
-  --color-ink: var(--ink);
-  --color-jay: var(--jay);
-  --color-sky: var(--sky);
-  --color-quill: var(--quill);
-  --color-rule: var(--rule);
+  --font-sans: "Archivo Variable", ui-sans-serif, system-ui, sans-serif;
 }
 
 @layer base {
-  html {
-    background: var(--down);
-    color: var(--ink);
-    font-family: var(--font-sans);
-    font-size: 15px;
-    line-height: 1.55;
-    font-variation-settings: "CASL" 0, "MONO" 0;
-    -webkit-font-smoothing: antialiased;
+  html,
+  body,
+  #root {
+    height: 100%;
   }
 
-  code,
-  .code {
-    font-family: var(--font-mono);
-    font-variation-settings: "MONO" 1, "CASL" 0;
-    font-size: 0.92em;
+  html {
+    background: transparent;
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.45;
+    font-variant-numeric: tabular-nums;
+    -webkit-font-smoothing: antialiased;
+    user-select: none;
   }
 
   :focus-visible {
-    outline: 2px solid var(--jay);
-    outline-offset: 3px;
+    outline: 2px solid var(--level);
+    outline-offset: 2px;
   }
 }
 
 @layer components {
-  .shell {
+  .console {
     display: grid;
-    grid-template-rows: auto 1fr auto auto;
-    gap: clamp(1.25rem, 3.5vh, 2.5rem);
+    grid-template-rows: auto 1fr auto;
     /* Less the menu bar Plume draws on Linux, if there is one. */
-    min-height: calc(100vh - var(--plume-menu-height, 0px));
-    max-width: 52rem;
-    padding: clamp(1.5rem, 5vh, 3.5rem) clamp(1.5rem, 8vw, 6.5rem);
+    height: calc(100vh - var(--plume-menu-height, 0px));
   }
 
-  .masthead {
+  /* The deck: where you are, what you can do, the disk's level. */
+  .deck {
+    display: grid;
+    gap: 0.9rem;
+    background: var(--plate);
+    border-bottom: 1px solid var(--rule);
+    padding: 0.85rem 1.25rem 1rem;
+  }
+
+  .deck-row {
     display: flex;
     align-items: center;
-    gap: 0.9rem;
-  }
-
-  .mark {
-    flex: none;
-    width: 2.25rem;
-    height: 2.25rem;
-    background: var(--jay);
-    mask: url("./feather.svg") center / contain no-repeat;
-  }
-
-  .title {
-    font-size: 1.35rem;
-    font-weight: 720;
-    line-height: 1.2;
-    letter-spacing: -0.01em;
-  }
-
-  .lede {
-    color: var(--quill);
-  }
-
-  /* The greeting: the form, then Zig's answer as the page's one large voice. */
-  .greet {
-    align-self: start;
-    display: grid;
     gap: 1.25rem;
-    padding-top: clamp(0rem, 3vh, 1.5rem);
+    min-width: 0;
   }
 
-  .ask {
+  .wordmark {
+    flex: none;
+    font-size: 1.05rem;
+    font-weight: 720;
+    font-stretch: 118%;
+    letter-spacing: -0.005em;
+  }
+
+  .crumbs {
     display: flex;
-    max-width: 28rem;
-    border: 1px solid var(--rule);
-    border-radius: 0.85rem;
-    background: color-mix(in oklab, var(--down) 70%, var(--sky));
-    padding: 0.3rem;
-  }
-
-  .ask:focus-within {
-    border-color: var(--jay);
-  }
-
-  .field {
+    align-items: center;
     flex: 1;
     min-width: 0;
-    background: transparent;
-    padding: 0.55rem 0.75rem;
-    outline: none;
+    overflow: hidden;
+    white-space: nowrap;
+    font-size: 0.97rem;
   }
 
-  .field::placeholder {
-    color: var(--quill);
+  .crumb-step {
+    display: flex;
+    align-items: center;
+    min-width: 0;
   }
 
-  .action {
-    border-radius: 0.6rem;
-    background: var(--jay);
-    color: var(--on-jay);
-    padding: 0.55rem 1.1rem;
-    font-weight: 620;
+  .crumb-step:first-child {
+    flex-shrink: 1;
+  }
+
+  .crumb {
+    min-width: 0;
+    max-width: 40ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    border-radius: 4px;
+    padding: 0.1rem 0.3rem;
+    color: var(--quiet);
     cursor: pointer;
   }
 
-  .action:hover {
-    background: color-mix(in oklab, var(--jay) 88%, var(--ink));
-  }
-
-  .action:disabled {
-    cursor: default;
-    opacity: 0.55;
-  }
-
-  .action-quiet {
-    border: 1px solid var(--rule);
-    background: transparent;
+  .crumb:hover {
     color: var(--ink);
   }
 
-  .action-quiet:hover {
-    background: var(--sky);
-  }
-
-  .answer {
-    font-size: clamp(2.75rem, 7vw, 5.25rem);
-    font-weight: 680;
-    line-height: 1;
-    letter-spacing: -0.02em;
-    font-variation-settings: "CASL" 1, "MONO" 0, "slnt" -7;
-    color: var(--jay);
-    overflow-wrap: anywhere;
-    /* Two lines kept: an answer of one does not move what follows. */
-    min-height: 2lh;
-  }
-
-  .answer[data-empty] {
-    color: var(--quill);
-    font-weight: 520;
-  }
-
-  /* Zig's answer arrives as if written: one stroke, left to right. */
-  .answer[data-written] {
-    animation: write 0.45s cubic-bezier(0.3, 0.7, 0.3, 1) both;
-  }
-
-  .trace {
-    min-height: 1.55em;
-    color: var(--quill);
-  }
-
-  /* The worker thread: progress drawn as a feather's barbs. */
-  .work {
-    display: grid;
-    grid-template-columns: 1fr auto;
-    align-items: center;
-    gap: 0.9rem 1.5rem;
-    border-top: 1px solid var(--rule);
-    padding-top: 1.4rem;
-  }
-
-  .work h2 {
+  .crumb[aria-current] {
+    color: var(--ink);
     font-weight: 650;
   }
 
-  .work .trace {
-    grid-column: 1 / -1;
+  .crumb-sep {
+    color: var(--dim);
+    padding: 0 0.1rem;
   }
 
-  .barbs {
-    grid-column: 1 / -1;
+  .crumb-idle {
+    color: var(--quiet);
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .deck-actions {
     display: flex;
+    flex: none;
+    gap: 0.5rem;
+  }
+
+  .control {
+    border: 1px solid #2a394a;
+    border-radius: 6px;
+    background: #16212c;
+    padding: 0.4rem 0.85rem;
+    font-size: 0.93rem;
+    font-weight: 560;
+    cursor: pointer;
+  }
+
+  .control:hover {
+    background: #1d2a37;
+  }
+
+  .control:disabled {
+    cursor: default;
+    opacity: 0.5;
+  }
+
+  .control-main {
+    border-color: transparent;
+    background: var(--ink);
+    color: var(--night);
+  }
+
+  .control-main:hover {
+    background: #ffffff;
+  }
+
+  /* The meter: the one loud thing. */
+  .meter {
+    display: grid;
+    grid-template-columns: minmax(9rem, auto) 1fr minmax(9rem, auto);
+    align-items: center;
+    gap: 1.25rem;
+  }
+
+  .meter-reading-end {
+    text-align: right;
+  }
+
+  .figure {
+    display: flex;
+    align-items: baseline;
+    gap: 0.3rem;
+    line-height: 1;
+  }
+
+  .meter-reading-end .figure {
+    justify-content: flex-end;
+  }
+
+  .figure-value {
+    font-size: 2.15rem;
+    font-weight: 780;
+    font-stretch: 125%;
+    letter-spacing: -0.02em;
+  }
+
+  .figure-unit {
+    color: var(--quiet);
+    font-size: 0.95rem;
+    font-weight: 600;
+    font-stretch: 110%;
+  }
+
+  .figure-level .figure-value {
+    color: var(--level);
+  }
+
+  .figure-headroom[data-low] .figure-value {
+    color: var(--clip);
+  }
+
+  .figure-caption {
+    margin-top: 0.3rem;
+    color: var(--quiet);
+    font-size: 0.86rem;
+  }
+
+  .segments {
+    display: flex;
+    gap: 3px;
+    height: 1.6rem;
+  }
+
+  .segment {
+    flex: 1;
+    border-radius: 1.5px;
+    background: var(--unlit);
+    transition: background-color 0.12s, box-shadow 0.12s;
+  }
+
+  .segment[data-state="lit"] {
+    background: var(--level);
+    box-shadow: 0 0 7px color-mix(in oklab, var(--level) 45%, transparent);
+  }
+
+  .segment[data-state="edge"] {
+    background: color-mix(in oklab, var(--level) 55%, var(--dim));
+  }
+
+  .segment[data-state="used"] {
+    background: var(--dim);
+  }
+
+  .segment[data-clip][data-state="free"] {
+    background: color-mix(in oklab, var(--clip) 22%, var(--unlit));
+  }
+
+  .segment[data-clip][data-state="used"],
+  .segment[data-clip][data-state="lit"] {
+    background: var(--clip);
+    box-shadow: 0 0 7px color-mix(in oklab, var(--clip) 45%, transparent);
+  }
+
+  /* The map: transparent, the GL treemap under it. */
+  .map {
+    position: relative;
+    overflow: hidden;
+    cursor: default;
+  }
+
+  .map[data-pointer="open"] {
+    cursor: pointer;
+  }
+
+  .labels {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.16s;
+  }
+
+  .labels[data-shown] {
+    opacity: 1;
+  }
+
+  .label {
+    position: absolute;
+    overflow: hidden;
+    white-space: nowrap;
+    font-size: 0.82rem;
+    font-stretch: 82%;
+    line-height: 1.25;
+  }
+
+  .label-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .label-header {
+    display: flex;
+    align-items: center;
     gap: 0.4rem;
-    padding-left: 0.35rem;
+    padding: 0 0.4rem;
+    color: #dbe5ef;
+    font-weight: 620;
   }
 
-  .barb {
-    width: 0.4rem;
-    height: 1.75rem;
-    border-radius: 1px;
-    background: var(--rule);
-    transform: skewX(-24deg);
-    transition: background-color 0.18s;
+  .label-header .label-size {
+    flex: none;
+    color: #9db0c4;
+    font-weight: 480;
   }
 
-  .barb[data-on] {
-    background: var(--jay);
+  .label-tile {
+    display: flex;
+    flex-direction: column;
+    padding: 0.3rem 0.45rem;
+    color: rgb(255 255 255 / 0.95);
+    font-weight: 640;
+    text-shadow: 0 1px 2px rgb(0 0 0 / 0.5);
   }
 
-  .files {
-    color: var(--quill);
+  .label-tile .label-size {
+    font-weight: 480;
+    opacity: 0.85;
   }
 
-  .files code {
-    color: var(--ink);
+  .label-tile[data-shape="rest"],
+  .label-tile[data-shape="closed"] {
+    color: #cdd7e2;
   }
-}
 
-@keyframes write {
-  from {
-    clip-path: inset(0 100% 0 0);
+  .tooltip {
+    position: absolute;
+    z-index: 2;
+    max-width: 22rem;
+    border: 1px solid #2a394a;
+    border-radius: 8px;
+    background: rgb(14 21 30 / 0.94);
+    padding: 0.6rem 0.75rem 0.65rem;
+    pointer-events: none;
+    box-shadow: 0 10px 30px rgb(0 0 0 / 0.45);
   }
-  to {
-    clip-path: inset(0 0 0 0);
+
+  .tooltip-name {
+    font-weight: 650;
+    overflow-wrap: anywhere;
+  }
+
+  .tooltip-size {
+    margin-top: 0.15rem;
+    font-size: 1.2rem;
+    font-weight: 740;
+    font-stretch: 115%;
+  }
+
+  .tooltip-share {
+    color: var(--quiet);
+    font-size: 0.86rem;
+    font-weight: 500;
+    font-stretch: 100%;
+  }
+
+  .tooltip-kind {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-top: 0.2rem;
+    color: var(--quiet);
+    font-size: 0.86rem;
+  }
+
+  .tooltip-hint {
+    margin-top: 0.35rem;
+    color: var(--level);
+    font-size: 0.86rem;
+  }
+
+  /* Before a scan, during one, when one failed: over the empty map. */
+  .stage {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: min(36rem, calc(100% - 3rem));
+    transform: translate(-50%, -55%);
+  }
+
+  .stage-title {
+    font-size: 1.85rem;
+    font-weight: 720;
+    font-stretch: 112%;
+    line-height: 1.15;
+    letter-spacing: -0.01em;
+    overflow-wrap: anywhere;
+  }
+
+  .stage-text {
+    margin-top: 0.6rem;
+    max-width: 30rem;
+    color: var(--quiet);
+    font-size: 1.05rem;
+  }
+
+  .stage-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    margin-top: 1.4rem;
+  }
+
+  .stage-actions .control {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .count {
+    color: var(--level);
+    font-size: 4.25rem;
+    font-weight: 800;
+    font-stretch: 125%;
+    line-height: 1;
+    letter-spacing: -0.03em;
+  }
+
+  /* The rack: what the space is, and how the scan went. */
+  .rack {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.5rem;
+    min-height: 2.6rem;
+    background: var(--plate);
+    border-top: 1px solid var(--rule);
+    padding: 0.5rem 1.25rem;
+  }
+
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem 1.1rem;
+  }
+
+  .legend-entry {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.88rem;
+  }
+
+  .legend-name {
+    color: var(--quiet);
+  }
+
+  .swatch {
+    flex: none;
+    width: 0.65rem;
+    height: 0.65rem;
+    border-radius: 2px;
+  }
+
+  .status {
+    flex: none;
+    color: var(--quiet);
+    font-size: 0.86rem;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .answer[data-written] {
-    animation: none;
-  }
-
-  .barb {
+  .segment,
+  .labels {
     transition: none;
   }
 }

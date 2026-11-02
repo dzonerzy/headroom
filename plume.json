@@ -4,13 +4,14 @@
   "app_id": "com.dzonerzy.headroom",
   "version": "0.1.0",
   "window": {
-    "width": 1024,
-    "height": 768,
+    "width": 1280,
+    "height": 820,
     "resizable": true,
     "frameless": false,
-    "transparent": false
+    "transparent": false,
+    "native_layer": true
   },
-  "color_scheme": "system",
+  "color_scheme": "dark",
   "single_instance": false,
   "profile": "minimal",
   "compress": false,
