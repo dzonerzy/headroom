@@ -50,7 +50,7 @@ test "the tray's popover" {
     const root = try tmp.dir.realPathFileAlloc(std.testing.io, ".", std.testing.allocator);
     defer std.testing.allocator.free(root);
 
-    const h = try plume.testing.Harness.startProject(@import("plume_project"), .{ .page = "tray.html", .width = 340, .height = 440 });
+    const h = try plume.testing.Harness.startProject(@import("plume_project"), .{ .page = "tray.html", .width = 340, .height = 500 });
     defer h.stop();
     var map: Map = .{ .window = null, .io = std.testing.io };
     defer map.deinit(std.heap.smp_allocator);
@@ -64,7 +64,11 @@ test "the tray's popover" {
 
     try h.waitFor(".popover");
     try std.testing.expect((try h.text(".popover-figure .figure-value")).len > 0);
-    try std.testing.expect(std.mem.startsWith(u8, try h.text(".figure-caption"), "headroom on "));
+    try std.testing.expect(std.mem.startsWith(u8, try h.text(".popover-caption"), "headroom, "));
+    // The arc: 40 segments, the used share lit once its sweep is over.
+    h.advance(800);
+    try std.testing.expectEqual(@as(u32, 40), try h.evaluate(u32, "document.querySelectorAll('.arc-segment').length"));
+    try std.testing.expect(try h.evaluate(u32, "document.querySelectorAll('.arc-segment[data-on]').length") >= 1);
     try h.expectText(".popover-entry:first-child .popover-name", "games");
     try std.testing.expectEqual(@as(u32, 3), try h.evaluate(u32, "document.querySelectorAll('.popover-entry').length"));
     try shot(h, "popover");

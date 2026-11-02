@@ -3,9 +3,6 @@ import { App, Plume, type Space, type Top } from "./bindings";
 import { bytes, bytesParts, share } from "./format";
 import { Mark } from "./Meter";
 
-/** Segments of the small meter, and where its clip zone starts. */
-const SEGMENTS = 32;
-const CLIP_FROM = Math.round(SEGMENTS * 0.9);
 /** Below this share free, the alarm (as src/app.zig's alarm_below). */
 const ALARM_BELOW = 0.1;
 
@@ -16,16 +13,21 @@ function read(): Reading {
   return { space: App.space(home), top: App.largest(4), scanned: App.scannedPath(), drive: driveOf(home) };
 }
 
-/** The tray's popover: the disk's headroom at a glance, the alarm, what
- * filled it at the last scan, and the way into Headroom. */
+/** The tray's popover: the disk as an arc meter with its headroom in the
+ * middle, the alarm, what filled it at the last scan, the way into
+ * Headroom. */
 export default function Popover() {
   const [reading, setReading] = useState<Reading>(read);
-  const refresh = useCallback(() => setReading(read()), []);
+  // Bumped each time it is shown: the arc sweeps up again.
+  const [shown, setShown] = useState(0);
+  const refresh = useCallback(() => {
+    setReading(read());
+    setShown((n) => n + 1);
+  }, []);
 
   useEffect(() => {
-    // Fresh each time it is shown (it takes the focus), and while open.
     const off = Plume.window.on("focus", (focused) => focused && refresh());
-    const timer = window.setInterval(refresh, 30_000);
+    const timer = window.setInterval(() => setReading(read()), 30_000);
     const key = (event: KeyboardEvent) => event.key === "Escape" && App.hidePopover();
     window.addEventListener("keydown", key);
     return () => {
@@ -38,7 +40,6 @@ export default function Popover() {
   const { space, top, scanned, drive } = reading;
   const free = space ? space.free / space.total : 1;
   const low = free < ALARM_BELOW;
-  const used = space ? ((space.total - space.free) / space.total) * SEGMENTS : 0;
   const [value, unit] = bytesParts(space?.free ?? 0);
   const biggest = top[0]?.size ?? 1;
 
@@ -51,30 +52,26 @@ export default function Popover() {
         </span>
         <span className="popover-watch">
           <span className="led" data-on="" aria-hidden="true" />
-          Watching
+          Watching {drive}
         </span>
       </header>
 
-      <section className="popover-reading" aria-label="Free space">
-        <p className="figure popover-figure">
-          <span className="figure-value">{value}</span>
-          <span className="figure-unit">{unit}</span>
-        </p>
-        <p className="figure-caption">
-          headroom on {drive}
-          {space && `, ${share(free)} of ${bytes(space.total)}`}
-        </p>
-        <div className="segments popover-segments" role="meter" aria-label="Disk used" aria-valuemin={0} aria-valuemax={space?.total ?? 0} aria-valuenow={space ? space.total - space.free : 0}>
-          {Array.from({ length: SEGMENTS }, (_, i) => (
-            <span key={i} className="segment" data-state={i < used ? "lit" : "free"} data-clip={i >= CLIP_FROM ? "" : undefined} />
-          ))}
+      <section className="popover-gauge" aria-label="Free space">
+        <Arc used={1 - free} sweep={shown} />
+        <div className="popover-reading">
+          <p className="figure popover-figure">
+            <span className="figure-value">{value}</span>
+            <span className="figure-unit">{unit}</span>
+          </p>
+          <p className="popover-caption">
+            headroom{space && `, ${share(free)} of ${bytes(space.total)}`}
+          </p>
         </div>
-        <p className="popover-alarm">
-          {low
-            ? "Less than a tenth of the disk is free. Open Headroom to see what fills it."
-            : "You are told when less than a tenth of the disk is free."}
-        </p>
       </section>
+
+      <p className="popover-alarm">
+        {low ? "Less than a tenth of the disk is free." : "You are told when less than a tenth is free."}
+      </p>
 
       <section className="popover-top" aria-label="Largest at the last scan">
         {scanned && top.length > 0 ? (
@@ -87,7 +84,9 @@ export default function Popover() {
                 <li key={entry.name} className="popover-entry">
                   <span className="popover-name">{entry.name}</span>
                   <span className="popover-size">{bytes(entry.size)}</span>
-                  <span className="popover-bar" style={{ width: `${Math.max(3, (entry.size / biggest) * 100)}%` }} />
+                  <span className="popover-track">
+                    <span className="popover-bar" style={{ width: `${Math.max(2, (entry.size / biggest) * 100)}%` }} />
+                  </span>
                 </li>
               ))}
             </ul>
@@ -98,15 +97,117 @@ export default function Popover() {
       </section>
 
       <footer className="popover-actions">
-        <button className="control control-main" onClick={() => App.openMain()}>
+        <button className="control control-main popover-open" onClick={() => App.openMain()}>
           Open Headroom
         </button>
-        <button className="control" onClick={() => App.requestScan(drive)}>
+        <button className="control control-quiet popover-scan" onClick={() => App.requestScan(drive)}>
           Scan the whole disk
         </button>
       </footer>
     </main>
   );
+}
+
+/** Segments of the arc, its sweep (degrees) and the gap between segments. */
+const SEGMENTS = 40;
+const SWEEP = 220;
+const GAP = 1.6;
+const CX = 150;
+const CY = 150;
+const OUTER = 138;
+const INNER = 116;
+
+/** The disk as a VU meter's arc: used space lit, the last tenth the clip
+ * zone, a mark where the alarm starts. It sweeps up to the level each time
+ * the popover is shown (not with reduced motion). */
+function Arc({ used, sweep }: { used: number; sweep: number }) {
+  const target = Math.round(used * SEGMENTS);
+  const [lit, setLit] = useState(target);
+
+  useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setLit(target);
+      return;
+    }
+    const start = performance.now();
+    let frame = requestAnimationFrame(function step(now) {
+      const t = Math.min((now - start) / 650, 1);
+      // Ease out: quick, then settling on the level.
+      setLit(Math.round(target * (1 - Math.pow(1 - t, 3))));
+      if (t < 1) frame = requestAnimationFrame(step);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [target, sweep]);
+
+  const clipFrom = Math.round(SEGMENTS * (1 - ALARM_BELOW));
+  const step = (SWEEP - GAP * (SEGMENTS - 1)) / SEGMENTS;
+  const first = 90 + SWEEP / 2;
+  const alarm = first - clipFrom * (step + GAP) + GAP / 2;
+  return (
+    <svg className="arc" viewBox="-12 0 324 206" role="presentation">
+      <defs>
+        <filter id="arc-glow" x="-20%" y="-20%" width="140%" height="140%">
+          <feGaussianBlur stdDeviation="2.4" result="blur" />
+          <feMerge>
+            <feMergeNode in="blur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+      </defs>
+      {Array.from({ length: SEGMENTS }, (_, i) => {
+        const from = first - i * (step + GAP);
+        const on = i < lit;
+        const clip = i >= clipFrom;
+        return (
+          <path
+            key={i}
+            d={sector(from, from - step)}
+            className="arc-segment"
+            data-on={on ? "" : undefined}
+            data-clip={clip ? "" : undefined}
+            filter={on ? "url(#arc-glow)" : undefined}
+          />
+        );
+      })}
+      {/* Where the alarm starts. */}
+      <line className="arc-alarm" {...ray(alarm, INNER - 9, INNER - 3)} />
+      <text className="arc-label arc-label-alarm" {...at(alarm + 4, INNER - 16)} textAnchor="end">
+        alarm
+      </text>
+      <text className="arc-label" {...at(first - 3, OUTER + 14)} textAnchor="middle">
+        0
+      </text>
+      <text className="arc-label" {...at(first - SWEEP + 3, OUTER + 14)} textAnchor="middle">
+        full
+      </text>
+    </svg>
+  );
+}
+
+function polar(degrees: number, radius: number) {
+  const a = (degrees * Math.PI) / 180;
+  return { x: CX + radius * Math.cos(a), y: CY - radius * Math.sin(a) };
+}
+
+/** An arc segment from angle `a` to `b` (degrees, counterclockwise from
+ * the right, a > b: drawn clockwise). */
+function sector(a: number, b: number): string {
+  const o1 = polar(a, OUTER);
+  const o2 = polar(b, OUTER);
+  const i2 = polar(b, INNER);
+  const i1 = polar(a, INNER);
+  return `M${o1.x},${o1.y} A${OUTER},${OUTER} 0 0 1 ${o2.x},${o2.y} L${i2.x},${i2.y} A${INNER},${INNER} 0 0 0 ${i1.x},${i1.y} Z`;
+}
+
+function ray(degrees: number, from: number, to: number) {
+  const p = polar(degrees, from);
+  const q = polar(degrees, to);
+  return { x1: p.x, y1: p.y, x2: q.x, y2: q.y };
+}
+
+function at(degrees: number, radius: number) {
+  const p = polar(degrees, radius);
+  return { x: p.x, y: p.y, dominantBaseline: "middle" as const };
 }
 
 /** A folder's own name: "ada" for "C:\Users\ada", the disk for its root. */

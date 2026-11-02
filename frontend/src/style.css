@@ -749,22 +749,30 @@
   }
 
   .popover {
+    --glow: var(--level);
+    position: relative;
     display: grid;
     /* minmax(0, …): a long path does not widen the panel. */
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto auto 1fr auto;
-    gap: 1rem;
+    grid-template-rows: auto auto auto 1fr auto;
     height: calc(100% - 16px);
     margin: 8px;
-    border: 1px solid #2a394a;
-    border-radius: 14px;
-    background: linear-gradient(180deg, #152230, var(--plate) 45%);
-    padding: 1rem 1.1rem 1.1rem;
-    box-shadow: 0 10px 28px rgb(0 0 0 / 0.5);
+    overflow: hidden;
+    border: 1px solid #263445;
+    border-radius: 16px;
+    /* A night panel, the meter's glow rising behind the arc. */
+    background:
+      radial-gradient(120% 70% at 50% 34%, color-mix(in oklab, var(--glow) 13%, transparent), transparent 62%),
+      linear-gradient(180deg, #121c27, #0c131b);
+    padding: 0.95rem 1.1rem 1rem;
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.06),
+      0 14px 34px rgb(0 0 0 / 0.55);
   }
 
   .popover[data-low] {
-    border-color: color-mix(in oklab, var(--clip) 50%, #2a394a);
+    --glow: var(--clip);
+    border-color: color-mix(in oklab, var(--clip) 45%, #263445);
   }
 
   .popover-head {
@@ -789,25 +797,81 @@
     font-size: 0.82rem;
   }
 
+  /* The arc, the headroom inside it. */
+  .popover-gauge {
+    position: relative;
+    margin: 0.35rem -0.4rem 0;
+  }
+
+  .arc {
+    display: block;
+    width: 100%;
+    overflow: visible;
+  }
+
+  .arc-segment {
+    fill: #17222e;
+    transition: fill 0.12s;
+  }
+
+  .arc-segment[data-clip] {
+    fill: color-mix(in oklab, var(--clip) 24%, #17222e);
+  }
+
+  .arc-segment[data-on] {
+    fill: var(--level);
+  }
+
+  .arc-segment[data-on][data-clip] {
+    fill: var(--clip);
+  }
+
+  .arc-alarm {
+    stroke: color-mix(in oklab, var(--clip) 80%, #ffffff);
+    stroke-width: 1.5;
+    stroke-linecap: round;
+  }
+
+  .arc-label {
+    fill: #5f6f82;
+    font-size: 10px;
+    font-stretch: 85%;
+  }
+
+  .arc-label-alarm {
+    fill: color-mix(in oklab, var(--clip) 70%, #8696a9);
+  }
+
+  .popover-reading {
+    position: absolute;
+    inset: 34% 0 auto;
+    display: grid;
+    justify-items: center;
+    text-align: center;
+  }
+
   .popover-figure .figure-value {
-    font-size: 2.7rem;
+    font-size: 3.1rem;
     font-weight: 800;
+    letter-spacing: -0.03em;
+    text-shadow: 0 0 24px color-mix(in oklab, var(--glow) 30%, transparent);
   }
 
   .popover[data-low] .popover-figure .figure-value {
     color: var(--clip);
   }
 
-  .popover-segments {
-    gap: 2px;
-    height: 0.95rem;
-    margin-top: 0.7rem;
+  .popover-caption {
+    margin-top: 0.25rem;
+    color: var(--quiet);
+    font-size: 0.84rem;
   }
 
   .popover-alarm {
-    margin-top: 0.6rem;
+    margin-top: -0.4rem;
     color: var(--quiet);
-    font-size: 0.84rem;
+    font-size: 0.8rem;
+    text-align: center;
   }
 
   .popover[data-low] .popover-alarm {
@@ -816,8 +880,9 @@
 
   .popover-top {
     min-height: 0;
+    margin-top: 0.9rem;
     border-top: 1px solid var(--rule);
-    padding-top: 0.8rem;
+    padding-top: 0.75rem;
   }
 
   .popover-label {
@@ -837,8 +902,8 @@
   .popover-entry {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
-    gap: 0.15rem 0.6rem;
-    font-size: 0.9rem;
+    gap: 0.2rem 0.6rem;
+    font-size: 0.88rem;
   }
 
   .popover-name {
@@ -849,14 +914,22 @@
 
   .popover-size {
     color: var(--quiet);
+    font-stretch: 90%;
+  }
+
+  .popover-track {
+    grid-column: 1 / -1;
+    height: 4px;
+    border-radius: 2px;
+    background: #17222e;
   }
 
   .popover-bar {
-    grid-column: 1 / -1;
-    height: 3px;
+    display: block;
+    height: 100%;
     border-radius: 2px;
-    background: var(--level);
-    box-shadow: 0 0 6px color-mix(in oklab, var(--level) 45%, transparent);
+    background: linear-gradient(90deg, color-mix(in oklab, var(--level) 55%, #17222e), var(--level));
+    box-shadow: 0 0 8px color-mix(in oklab, var(--level) 45%, transparent);
   }
 
   .popover-empty {
@@ -865,14 +938,17 @@
   }
 
   .popover-actions {
-    display: flex;
-    gap: 0.5rem;
+    display: grid;
+    gap: 0.2rem;
+    margin-top: 0.8rem;
   }
 
-  .popover-actions .control {
-    flex: 1;
-    padding-inline: 0.5rem;
-    white-space: nowrap;
+  .popover-open {
+    padding-block: 0.6rem;
+  }
+
+  .popover-scan {
+    font-size: 0.88rem;
   }
 }
 
