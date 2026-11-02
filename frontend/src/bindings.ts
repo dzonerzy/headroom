@@ -10,6 +10,14 @@ export class PlumeError<Code extends string = string> extends Error {
   }
 }
 
+export interface Disk {
+  path: string;
+  name: string;
+  total: number;
+  free: number;
+  removable: boolean;
+}
+
 export interface Changed {
   since_ms: number;
   before: number;
@@ -164,6 +172,9 @@ export interface Progress {
 }
 
 export interface AppErrors {
+  disks: "OutOfMemory";
+  alarm: never;
+  setAlarm: never;
   changed: "OutOfMemory";
   home: never;
   space: never;
@@ -193,6 +204,10 @@ export interface AppErrors {
 }
 
 export interface AppBindings {
+  /** Fails with PlumeError<AppErrors["disks"]>. */
+  disks(): Disk[];
+  alarm(): number;
+  setAlarm(arg1: number): void;
   /** Fails with PlumeError<AppErrors["changed"]>. */
   changed(): Changed | null;
   home(): string;
@@ -381,6 +396,15 @@ function plumeError(error: unknown): unknown {
 }
 
 export const App: AppBindings = {
+  disks() {
+    try { return native.disks(); } catch (error) { throw plumeError(error); }
+  },
+  alarm() {
+    try { return native.alarm(); } catch (error) { throw plumeError(error); }
+  },
+  setAlarm(arg1) {
+    try { return native.setAlarm(arg1); } catch (error) { throw plumeError(error); }
+  },
   changed() {
     try { return native.changed(); } catch (error) { throw plumeError(error); }
   },

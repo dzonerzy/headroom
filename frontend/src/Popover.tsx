@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useState } from "react";
-import { App, Plume, type Space, type Top } from "./bindings";
+import { App, Plume, type Disk, type Space, type Top } from "./bindings";
 import { bytes, bytesParts, share } from "./format";
 import { Mark } from "./Meter";
 
-/** Below this share free, the alarm (as src/app.zig's alarm_below). */
-const ALARM_BELOW = 0.1;
+/** The alarm's choices, percent free. */
+const ALARMS = [5, 10, 15, 20];
 
-type Reading = { space: Space | null; top: Top[]; scanned: string | null; drive: string };
+type Reading = { space: Space | null; top: Top[]; scanned: string | null; drive: string; alarm: number; others: Disk[] };
 
 function read(): Reading {
   const home = App.home();
-  return { space: App.space(home), top: App.largest(4), scanned: App.scannedPath(), drive: driveOf(home) };
+  const drive = driveOf(home);
+  const others = App.disks().filter((d) => d.path.toLowerCase() !== drive.toLowerCase() && !d.removable);
+  return { space: App.space(home), top: App.largest(others.length > 0 ? 3 : 4), scanned: App.scannedPath(), drive, alarm: App.alarm(), others };
 }
 
 /** The tray's popover: the disk as an arc meter with its headroom in the
@@ -37,9 +39,9 @@ export default function Popover() {
     };
   }, [refresh]);
 
-  const { space, top, scanned, drive } = reading;
+  const { space, top, scanned, drive, alarm, others } = reading;
   const free = space ? space.free / space.total : 1;
-  const low = free < ALARM_BELOW;
+  const low = free < alarm / 100;
   const [value, unit] = bytesParts(space?.free ?? 0);
   const biggest = top[0]?.size ?? 1;
 
@@ -57,7 +59,7 @@ export default function Popover() {
       </header>
 
       <section className="popover-gauge" aria-label="Free space">
-        <Arc used={1 - free} sweep={shown} />
+        <Arc used={1 - free} sweep={shown} alarm={alarm / 100} />
         <div className="popover-reading">
           <p className="figure popover-figure">
             <span className="figure-value">{value}</span>
@@ -69,9 +71,41 @@ export default function Popover() {
         </div>
       </section>
 
-      <p className="popover-alarm">
-        {low ? "Less than a tenth of the disk is free." : "You are told when less than a tenth is free."}
-      </p>
+      <div className="popover-alarm">
+        <span>{low ? `Less than ${alarm}% is free. Tell me below` : "Tell me below"}</span>
+        <span className="popover-choices" role="radiogroup" aria-label="Alarm below">
+          {ALARMS.map((percent) => (
+            <button
+              key={percent}
+              className="popover-choice"
+              role="radio"
+              aria-checked={percent === alarm}
+              onClick={() => {
+                App.setAlarm(percent);
+                setReading(read());
+              }}
+            >
+              {percent}%
+            </button>
+          ))}
+        </span>
+      </div>
+
+      {others.length > 0 && (
+        <ul className="popover-disks" aria-label="Other disks">
+          {others.map((disk) => (
+            <li key={disk.path} className="popover-disk" data-low={disk.free / disk.total < alarm / 100 ? "" : undefined}>
+              <span className="popover-disk-name">
+                {disk.name} <span className="disk-path">{disk.path}</span>
+              </span>
+              <span className="popover-disk-free">{bytes(disk.free)} free</span>
+              <span className="disk-track">
+                <span className="disk-used" data-low={disk.free / disk.total < alarm / 100 ? "" : undefined} style={{ width: `${((disk.total - disk.free) / disk.total) * 100}%` }} />
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
 
       <section className="popover-top" aria-label="Largest at the last scan">
         {scanned && top.length > 0 ? (
@@ -120,7 +154,7 @@ const INNER = 116;
 /** The disk as a VU meter's arc: used space lit, the last tenth the clip
  * zone, a mark where the alarm starts. It sweeps up to the level each time
  * the popover is shown (not with reduced motion). */
-function Arc({ used, sweep }: { used: number; sweep: number }) {
+function Arc({ used, sweep, alarm }: { used: number; sweep: number; alarm: number }) {
   const target = Math.round(used * SEGMENTS);
   const [lit, setLit] = useState(target);
 
@@ -139,10 +173,10 @@ function Arc({ used, sweep }: { used: number; sweep: number }) {
     return () => cancelAnimationFrame(frame);
   }, [target, sweep]);
 
-  const clipFrom = Math.round(SEGMENTS * (1 - ALARM_BELOW));
+  const clipFrom = Math.round(SEGMENTS * (1 - alarm));
   const step = (SWEEP - GAP * (SEGMENTS - 1)) / SEGMENTS;
   const first = 90 + SWEEP / 2;
-  const alarm = first - clipFrom * (step + GAP) + GAP / 2;
+  const alarmAt = first - clipFrom * (step + GAP) + GAP / 2;
   return (
     <svg className="arc" viewBox="-12 0 324 206" role="presentation">
       <defs>
@@ -170,8 +204,8 @@ function Arc({ used, sweep }: { used: number; sweep: number }) {
         );
       })}
       {/* Where the alarm starts. */}
-      <line className="arc-alarm" {...ray(alarm, INNER - 9, INNER - 3)} />
-      <text className="arc-label arc-label-alarm" {...at(alarm + 4, INNER - 16)} textAnchor="end">
+      <line className="arc-alarm" {...ray(alarmAt, INNER - 9, INNER - 3)} />
+      <text className="arc-label arc-label-alarm" {...at(alarmAt + 4, INNER - 16)} textAnchor="end">
         alarm
       </text>
       <text className="arc-label" {...at(first - 3, OUTER + 14)} textAnchor="middle">

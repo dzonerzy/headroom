@@ -17,6 +17,8 @@ test {
     _ = @import("remove.zig");
     _ = @import("app.zig");
     _ = @import("rules.zig");
+    _ = @import("snapshot.zig");
+    _ = @import("disks.zig");
 }
 
 fn write(dir: std.Io.Dir, path: []const u8, bytes: usize) !void {
@@ -129,7 +131,7 @@ test "the tray's popover" {
     const root = try tmp.dir.realPathFileAlloc(std.testing.io, ".", std.testing.allocator);
     defer std.testing.allocator.free(root);
 
-    const h = try plume.testing.Harness.startProject(@import("plume_project"), .{ .page = "tray.html", .width = 340, .height = 500 });
+    const h = try plume.testing.Harness.startProject(@import("plume_project"), .{ .page = "tray.html", .width = 340, .height = 540 });
     defer h.stop();
     var map: Map = .{ .window = null, .io = std.testing.io };
     defer map.deinit(std.heap.smp_allocator);
@@ -151,6 +153,11 @@ test "the tray's popover" {
     try h.expectText(".popover-entry:first-child .popover-name", "games");
     try std.testing.expectEqual(@as(u32, 3), try h.evaluate(u32, "document.querySelectorAll('.popover-entry').length"));
     try shot(h, "popover");
+
+    // The alarm's threshold: 20%.
+    try h.click(".popover-choice:nth-child(4)");
+    try h.waitUntil("document.querySelector('.popover-choice[aria-checked=true]')?.textContent === '20%'");
+    try std.testing.expectEqual(@as(u8, 20), state.alarm());
 }
 
 test "scanning a folder, opening one of its folders, going back" {

@@ -13,6 +13,7 @@ const elevate = @import("elevate.zig");
 const removing = @import("remove.zig");
 const rules = @import("rules.zig");
 const snapshot = @import("snapshot.zig");
+const disk_list = @import("disks.zig");
 
 pub const App = struct {
     pub const async_methods = .{ "scan", "remove", "removeMany", "emptyBin" };
@@ -202,11 +203,12 @@ pub const App = struct {
     /// The tray's popover (tray.html), shown by the icon on a click; made
     /// once, hidden when not shown.
     popover: ?*plume.Window = null,
-    /// Told already that the disk is nearly full (until it has room again).
-    alarmed: bool = false,
-
-    /// Below this share of the disk free, the alarm: the meter's red zone.
-    pub const alarm_below = 0.10;
+    /// The disks told already that they are nearly full (until they have
+    /// room again), by path.
+    alarmed: std.ArrayList([]u8) = .empty,
+    /// Below this percent of a disk free, the alarm (the meter's red zone
+    /// is the last tenth).
+    alarm_percent: u8 = 10,
 
     const gpa = std.heap.smp_allocator;
 
@@ -222,6 +224,27 @@ pub const App = struct {
         gpa.free(self.finds);
         self.found.deinit(gpa);
         if (self.changes_arena) |*arena| arena.deinit();
+        for (self.alarmed.items) |path| gpa.free(path);
+        self.alarmed.deinit(gpa);
+    }
+
+    /// The disks there are to scan, with their space.
+    pub fn disks(self: *App, allocator: std.mem.Allocator) error{OutOfMemory}![]const disk_list.Disk {
+        return disk_list.list(allocator, self.io);
+    }
+
+    /// Below what percent free a disk raises the alarm.
+    pub fn alarm(self: *App) u8 {
+        return self.alarm_percent;
+    }
+
+    /// The alarm's threshold (1 to 50 percent), remembered.
+    pub fn setAlarm(self: *App, percent: u8) void {
+        self.alarm_percent = std.math.clamp(percent, 1, 50);
+        for (self.alarmed.items) |path| gpa.free(path);
+        self.alarmed.clearRetainingCapacity();
+        self.saveSettings();
+        self.watchTick();
     }
 
     /// What changed since the previous scan of `tree`'s folder (kept in a
@@ -721,31 +744,48 @@ pub const App = struct {
         self.saveSettings();
     }
 
-    /// The disk's headroom on the tray, and the alarm once it is nearly
-    /// full. The page calls it every minute, the tray once a minute too.
+    /// The home disk's headroom on the tray, and the alarm for any fixed
+    /// disk once it is nearly full. The page calls it every minute.
     pub fn watchTick(self: *App) void {
         const tray = self.tray orelse return;
         const app = self.plume_app orelse return;
-        const s = volume.space(gpa, self.home_path) orelse return;
-        if (s.total == 0) return;
-        const free_share = @as(f64, @floatFromInt(s.free)) / @as(f64, @floatFromInt(s.total));
-        var free_text: [32]u8 = undefined;
-        var level: [96]u8 = undefined;
-        const label = std.fmt.bufPrint(&level, "{s} free on {s} ({d:.0}%)", .{ human(&free_text, s.free), driveOf(self.home_path), free_share * 100 }) catch return;
-        var tip: [128]u8 = undefined;
-        tray.setTooltip(std.fmt.bufPrint(&tip, "Headroom: {s}", .{label}) catch label) catch {};
-        tray.setMenu(&trayMenu(label, app.startsAtLogin())) catch {};
+        if (volume.space(gpa, self.home_path)) |s| if (s.total > 0) {
+            const free_share = @as(f64, @floatFromInt(s.free)) / @as(f64, @floatFromInt(s.total));
+            var free_text: [32]u8 = undefined;
+            var level: [96]u8 = undefined;
+            const label = std.fmt.bufPrint(&level, "{s} free on {s} ({d:.0}%)", .{ human(&free_text, s.free), driveOf(self.home_path), free_share * 100 }) catch return;
+            var tip: [128]u8 = undefined;
+            tray.setTooltip(std.fmt.bufPrint(&tip, "Headroom: {s}", .{label}) catch label) catch {};
+            tray.setMenu(&trayMenu(label, app.startsAtLogin())) catch {};
+        };
 
-        if (free_share < alarm_below and !self.alarmed) {
-            self.alarmed = true;
-            var body: [192]u8 = undefined;
-            app.notify(.{
-                .title = "Your disk is almost full",
-                .body = std.fmt.bufPrint(&body, "{s} has {s} of headroom left ({d:.0}%). Open Headroom to see what fills it.", .{ driveOf(self.home_path), human(&free_text, s.free), free_share * 100 }) catch null,
-                .tag = "headroom-low",
-            }) catch {};
-        } else if (free_share > alarm_below + 0.01) {
-            self.alarmed = false;
+        var arena: std.heap.ArenaAllocator = .init(gpa);
+        defer arena.deinit();
+        const all = disk_list.list(arena.allocator(), self.io) catch return;
+        const below = @as(f64, @floatFromInt(self.alarm_percent)) / 100;
+        for (all) |d| {
+            if (d.removable or d.total == 0) continue;
+            const free_share = @as(f64, @floatFromInt(d.free)) / @as(f64, @floatFromInt(d.total));
+            const told = for (self.alarmed.items, 0..) |path, i| {
+                if (std.mem.eql(u8, path, d.path)) break i;
+            } else null;
+            if (free_share < below and told == null) {
+                const path = gpa.dupe(u8, d.path) catch continue;
+                self.alarmed.append(gpa, path) catch {
+                    gpa.free(path);
+                    continue;
+                };
+                var free_text: [32]u8 = undefined;
+                var title: [96]u8 = undefined;
+                var body: [192]u8 = undefined;
+                app.notify(.{
+                    .title = std.fmt.bufPrint(&title, "{s} is almost full", .{d.path}) catch "A disk is almost full",
+                    .body = std.fmt.bufPrint(&body, "{s} of headroom left ({d:.0}%). Open Headroom to see what fills it.", .{ human(&free_text, d.free), free_share * 100 }) catch null,
+                    .tag = "headroom-low",
+                }) catch {};
+            } else if (free_share > below + 0.01) if (told) |i| {
+                gpa.free(self.alarmed.swapRemove(i));
+            };
         }
     }
 
@@ -760,7 +800,7 @@ pub const App = struct {
                 .title = "Headroom",
                 .url = "tray.html",
                 .width = 340,
-                .height = 500,
+                .height = 540,
                 .frameless = true,
                 .transparent = true,
                 .resizable = false,
@@ -786,7 +826,8 @@ pub const App = struct {
         if (self.popover) |popover| popover.hide() catch {};
         if (self.tray) |tray| app.destroyTray(tray);
         self.tray = null;
-        self.alarmed = false;
+        for (self.alarmed.items) |path| gpa.free(path);
+        self.alarmed.clearRetainingCapacity();
     }
 
     pub const Top = struct { name: []const u8, size: u64, folder: bool };
@@ -873,15 +914,24 @@ pub const App = struct {
         const path = self.settings_path orelse return;
         const cwd = std.Io.Dir.cwd();
         if (std.fs.path.dirname(path)) |folder| cwd.createDirPath(self.io, folder) catch return;
-        const text = if (self.tray != null) "{\"watch\":true}\n" else "{\"watch\":false}\n";
+        var buffer: [64]u8 = undefined;
+        const text = std.fmt.bufPrint(&buffer, "{{\"watch\":{},\"alarm\":{d}}}\n", .{ self.tray != null, self.alarm_percent }) catch return;
         cwd.writeFile(self.io, .{ .sub_path = path, .data = text }) catch {};
     }
 
-    /// main.zig: whether watching was on last time.
-    pub fn savedWatching(io: std.Io, path: []const u8) bool {
+    pub const Saved = struct { watch: bool = false, alarm: u8 = 10 };
+
+    /// main.zig: what was set last time.
+    pub fn saved(io: std.Io, path: []const u8) Saved {
         var buffer: [256]u8 = undefined;
-        const text = std.Io.Dir.cwd().readFile(io, path, &buffer) catch return false;
-        return std.mem.indexOf(u8, text, "\"watch\":true") != null;
+        const text = std.Io.Dir.cwd().readFile(io, path, &buffer) catch return .{};
+        var result: Saved = .{ .watch = std.mem.indexOf(u8, text, "\"watch\":true") != null };
+        if (std.mem.indexOf(u8, text, "\"alarm\":")) |at| {
+            const rest = text[at + "\"alarm\":".len ..];
+            const end = std.mem.indexOfNone(u8, rest, "0123456789") orelse rest.len;
+            result.alarm = std.math.clamp(std.fmt.parseInt(u8, rest[0..end], 10) catch 10, 1, 50);
+        }
+        return result;
     }
 
     /// The categories under `node`, biggest first (cached for the last one).

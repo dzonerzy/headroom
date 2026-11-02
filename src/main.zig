@@ -52,7 +52,9 @@ pub fn main(init: std.process.Init) !void {
     app.onClose(&state, Handlers.close);
     try app.onNotification(&state, Handlers.notification);
     if (state.settings_path) |path| {
-        if (App.savedWatching(init.io, path)) state.startWatching() catch {};
+        const saved = App.saved(init.io, path);
+        state.alarm_percent = saved.alarm;
+        if (saved.watch) state.startWatching() catch {};
     }
 
     app.run();

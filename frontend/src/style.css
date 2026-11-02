@@ -507,6 +507,66 @@
     color: var(--ink);
   }
 
+  /* The disks, to scan one whole. */
+  .disks {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+    gap: 0.5rem;
+    margin-top: 1rem;
+    max-width: 36rem;
+  }
+
+  .disk {
+    display: grid;
+    gap: 0.35rem;
+    width: 100%;
+    border: 1px solid #2a394a;
+    border-radius: 8px;
+    background: rgb(17 26 36 / 0.85);
+    padding: 0.6rem 0.75rem 0.65rem;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .disk:hover {
+    border-color: color-mix(in oklab, var(--level) 45%, #2a394a);
+  }
+
+  .disk-name {
+    overflow: hidden;
+    font-weight: 650;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .disk-path {
+    color: var(--quiet);
+    font-weight: 500;
+  }
+
+  .disk-track {
+    height: 4px;
+    border-radius: 2px;
+    background: var(--unlit);
+  }
+
+  .disk-used {
+    display: block;
+    height: 100%;
+    border-radius: 2px;
+    background: var(--level);
+    box-shadow: 0 0 6px color-mix(in oklab, var(--level) 45%, transparent);
+  }
+
+  .disk-used[data-low] {
+    background: var(--clip);
+  }
+
+  .disk-free {
+    color: var(--quiet);
+    font-size: 0.82rem;
+  }
+
   .stage-note {
     margin-top: 1.1rem;
     color: var(--quiet);
@@ -868,10 +928,69 @@
   }
 
   .popover-alarm {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
     margin-top: -0.4rem;
     color: var(--quiet);
     font-size: 0.8rem;
-    text-align: center;
+  }
+
+  .popover-choices {
+    display: flex;
+    border: 1px solid #2a394a;
+    border-radius: 6px;
+    overflow: hidden;
+  }
+
+  .popover-choice {
+    padding: 0.12rem 0.45rem;
+    color: var(--quiet);
+    font-size: 0.78rem;
+    cursor: pointer;
+  }
+
+  .popover-choice + .popover-choice {
+    border-left: 1px solid #2a394a;
+  }
+
+  .popover-choice[aria-checked="true"] {
+    background: color-mix(in oklab, var(--clip) 22%, transparent);
+    color: var(--ink);
+  }
+
+  .popover-disks {
+    display: grid;
+    gap: 0.45rem;
+    margin-top: 0.8rem;
+    border-top: 1px solid var(--rule);
+    padding-top: 0.7rem;
+  }
+
+  .popover-disk {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.2rem 0.6rem;
+    font-size: 0.85rem;
+  }
+
+  .popover-disk-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .popover-disk-free {
+    color: var(--quiet);
+  }
+
+  .popover-disk[data-low] .popover-disk-free {
+    color: var(--clip);
+  }
+
+  .popover-disk .disk-track {
+    grid-column: 1 / -1;
   }
 
   .popover[data-low] .popover-alarm {

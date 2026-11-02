@@ -25,6 +25,7 @@ export default function Root() {
   /** The folder on the map, for laying it out again at a new size. */
   const shown = useRef<number | null>(null);
   const admin = useRef(App.admin());
+  const disks = useRef(App.disks());
   const [elevating, setElevating] = useState(false);
   const [confirm, setConfirm] = useState<{ removal: Removal; mode: Mode; busy: boolean; error: string | null } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -105,7 +106,7 @@ export default function Root() {
       setNotice(
         watching
           ? "Headroom stopped watching free space."
-          : "Headroom watches free space from the tray now, and tells you when the disk is 90% full. Closing the window keeps it there.",
+          : `Headroom watches free space from the tray now, and tells you when a disk has less than ${App.alarm()}% free. Closing the window keeps it there.`,
       );
     } catch {
       setNotice("This desktop has no tray: Headroom cannot watch free space from there.");
@@ -419,7 +420,7 @@ export default function Root() {
               className="control control-quiet control-watch"
               aria-pressed={watching}
               onClick={toggleWatching}
-              title="Watch free space from the tray, and get told when the disk is 90% full"
+              title="Watch free space from the tray, and get told when a disk is nearly full"
             >
               <span className="led" data-on={watching ? "" : undefined} aria-hidden="true" />
               Watch free space
@@ -475,13 +476,32 @@ export default function Root() {
                   Scan your home folder
                 </button>
               )}
-              <button className="control control-large" onClick={() => scan(driveOf(home.current))}>
-                Scan the whole disk
-              </button>
+              {disks.current.length <= 1 && (
+                <button className="control control-large" onClick={() => scan(driveOf(home.current))}>
+                  Scan the whole disk
+                </button>
+              )}
               <button className="control control-large control-quiet" onClick={choose}>
                 Choose a folder
               </button>
             </div>
+            {disks.current.length > 1 && (
+              <ul className="disks" aria-label="Scan a whole disk">
+                {disks.current.map((disk) => (
+                  <li key={disk.path}>
+                    <button className="disk" onClick={() => scan(disk.path)}>
+                      <span className="disk-name">
+                        {disk.name} <span className="disk-path">{disk.path}</span>
+                      </span>
+                      <span className="disk-track">
+                        <span className="disk-used" data-low={disk.free / disk.total < 0.1 ? "" : undefined} style={{ width: `${((disk.total - disk.free) / disk.total) * 100}%` }} />
+                      </span>
+                      <span className="disk-free">{bytes(disk.free)} free of {bytes(disk.total)}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
             {home.current && (
               <p className="stage-note">
                 Your home folder is <span className="stage-path">{home.current}</span>. Nothing is changed or deleted.
