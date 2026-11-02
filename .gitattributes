@@ -1,0 +1,6 @@
+# Text keeps LF on every system: Zig, Vite and git on Windows agree, and
+# nothing is converted on checkout. Images (the icon, UI test snapshots) are
+# bytes.
+* text=auto eol=lf
+*.png binary
+*.ico binary
