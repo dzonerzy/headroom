@@ -84,6 +84,42 @@ test "what can go: found, listed, deleted" {
     try h.waitUntil("document.querySelector('.notice')?.textContent.startsWith('Deleted 1 place') === true");
 }
 
+test "what changed since the last scan" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try write(tmp.dir, "scanned/stays/notes.md", 10_000);
+    try tmp.dir.createDirPath(std.testing.io, "data");
+    const root = try tmp.dir.realPathFileAlloc(std.testing.io, "scanned", std.testing.allocator);
+    defer std.testing.allocator.free(root);
+    const data = try tmp.dir.realPathFileAlloc(std.testing.io, "data", std.testing.allocator);
+    defer std.testing.allocator.free(data);
+
+    const h = try plume.testing.Harness.startProject(@import("plume_project"), .{ .width = 1200, .height = 780 });
+    defer h.stop();
+    var map: Map = .{ .window = null, .io = std.testing.io };
+    defer map.deinit(std.heap.smp_allocator);
+    var state: App = .{ .io = std.testing.io, .home_path = root, .map = &map, .data_dir = data };
+    defer state.deinit();
+    state.events = h.app.events(App.Events);
+    try h.app.bind("App", App, &state);
+    try h.open();
+
+    // The first scan: nothing to compare with.
+    try h.click(".stage .control-main");
+    try h.waitUntil("document.querySelector('.status')?.textContent.includes('entries scanned') === true");
+    try std.testing.expect((try state.changed(h.arena.allocator())) == null);
+
+    // A folder grows by 80 MB; the next scan says so, where.
+    try write(tmp.dir, "scanned/downloads/game.zip", 80 * 1024 * 1024);
+    try h.click(".deck-actions .control:not(.control-main):not(.control-watch)");
+    try h.waitFor(".control-changed");
+    try std.testing.expect(std.mem.startsWith(u8, try h.text(".control-changed"), "+80"));
+    try h.click(".control-changed");
+    try h.waitFor(".changes-entry");
+    try h.expectText(".changes-entry .reclaim-path", "downloads");
+    try h.expectText(".changes-detail", "new");
+}
+
 test "the tray's popover" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();

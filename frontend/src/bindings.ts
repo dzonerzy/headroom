@@ -10,6 +10,22 @@ export class PlumeError<Code extends string = string> extends Error {
   }
 }
 
+export interface Changed {
+  since_ms: number;
+  before: number;
+  after: number;
+  grew: Moved[];
+  shrank: Moved[];
+}
+
+export interface Moved {
+  path: string;
+  before: number;
+  after: number;
+  node: number | null;
+  parent: number | null;
+}
+
 export interface Space {
   total: number;
   free: number;
@@ -148,6 +164,7 @@ export interface Progress {
 }
 
 export interface AppErrors {
+  changed: "OutOfMemory";
   home: never;
   space: never;
   startupScan: never;
@@ -176,6 +193,8 @@ export interface AppErrors {
 }
 
 export interface AppBindings {
+  /** Fails with PlumeError<AppErrors["changed"]>. */
+  changed(): Changed | null;
   home(): string;
   space(arg1: string): Space | null;
   startupScan(): string | null;
@@ -362,6 +381,9 @@ function plumeError(error: unknown): unknown {
 }
 
 export const App: AppBindings = {
+  changed() {
+    try { return native.changed(); } catch (error) { throw plumeError(error); }
+  },
   home() {
     try { return native.home(); } catch (error) { throw plumeError(error); }
   },

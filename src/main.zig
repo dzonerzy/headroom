@@ -28,6 +28,7 @@ pub fn main(init: std.process.Init) !void {
         .startup_scan = @import("elevate.zig").scanArgument(args),
         .plume_app = app,
         .settings_path = try settingsPath(init.arena.allocator(), env),
+        .data_dir = try dataDir(init.arena.allocator(), env),
     };
     defer state.deinit();
     state.events = app.events(App.Events);
@@ -55,6 +56,19 @@ pub fn main(init: std.process.Init) !void {
     }
 
     app.run();
+}
+
+/// Where Headroom keeps what it measured (the snapshots): %LOCALAPPDATA%\
+/// Headroom on Windows, $XDG_DATA_HOME/headroom (or ~/.local/share/headroom)
+/// on Linux.
+fn dataDir(a: std.mem.Allocator, env: *std.process.Environ.Map) !?[]const u8 {
+    if (builtin.os.tag == .windows) {
+        const local = env.get("LOCALAPPDATA") orelse return null;
+        return try std.fs.path.join(a, &.{ local, "Headroom" });
+    }
+    if (env.get("XDG_DATA_HOME")) |data| return try std.fs.path.join(a, &.{ data, "headroom" });
+    const home = env.get("HOME") orelse return null;
+    return try std.fs.path.join(a, &.{ home, ".local", "share", "headroom" });
 }
 
 /// Headroom's settings: %APPDATA%\Headroom\settings.json on Windows,

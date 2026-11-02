@@ -982,6 +982,115 @@
     background: linear-gradient(180deg, #121c27, var(--plate) 30%);
   }
 
+  .side-tabs {
+    display: flex;
+    align-items: center;
+    gap: 0.2rem;
+    border-bottom: 1px solid var(--rule);
+    padding: 0.45rem 0.6rem 0;
+  }
+
+  .side-tab {
+    border-bottom: 2px solid transparent;
+    padding: 0.45rem 0.6rem 0.55rem;
+    color: var(--quiet);
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .side-tab[aria-current] {
+    border-bottom-color: var(--level);
+    color: var(--ink);
+  }
+
+  .side-tabs .reclaim-close {
+    margin-left: auto;
+  }
+
+  .side-body {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .control-changed[data-sign="up"] {
+    color: #f0b8a8;
+  }
+
+  .control-changed[data-sign="down"] {
+    color: #c9f2e4;
+  }
+
+  .changes-figure[data-sign="up"] .figure-value {
+    color: #ff8a73;
+    text-shadow: 0 0 22px rgb(255 91 79 / 0.3);
+  }
+
+  .changes-section {
+    padding: 0.7rem 1.1rem 0.4rem;
+  }
+
+  .changes-label {
+    color: var(--quiet);
+    font-size: 0.82rem;
+    font-weight: 600;
+  }
+
+  .changes-list {
+    display: grid;
+    gap: 0.25rem;
+    margin-top: 0.4rem;
+  }
+
+  .changes-entry {
+    grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: 0.15rem;
+  }
+
+  .changes-entry:disabled {
+    cursor: default;
+  }
+
+  .changes-delta {
+    font-weight: 700;
+  }
+
+  .changes-delta[data-sign="up"] {
+    color: #ff8a73;
+  }
+
+  .changes-delta[data-sign="down"] {
+    color: var(--level);
+  }
+
+  .changes-detail {
+    grid-column: 1 / -1;
+    color: var(--quiet);
+    font-size: 0.78rem;
+  }
+
+  .changes-track {
+    grid-column: 1 / -1;
+    height: 3px;
+    border-radius: 2px;
+    background: #17222e;
+  }
+
+  .changes-bar {
+    display: block;
+    height: 100%;
+    border-radius: 2px;
+  }
+
+  .changes-bar[data-sign="up"] {
+    background: #ff8a73;
+  }
+
+  .changes-bar[data-sign="down"] {
+    background: var(--level);
+  }
+
   .reclaim-head {
     display: flex;
     align-items: flex-start;

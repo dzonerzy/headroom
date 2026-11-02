@@ -4,8 +4,8 @@ import { App, Events, Plume, PlumeError, type Item, type Label, type Progress, t
 import { bytes, compact, exact, plural, seconds, share } from "./format";
 import { Mark, Meter } from "./Meter";
 import { bin, ConfirmRemove, type Mode } from "./Remove";
-import { ConfirmGroup, ReclaimPanel } from "./Reclaim";
-import type { Group, Place, Reclaim, Removal } from "./bindings";
+import { ConfirmGroup, SidePanel, type Tab } from "./Reclaim";
+import type { Changed, Group, Place, Reclaim, Removal } from "./bindings";
 
 type Phase =
   | { name: "start" }
@@ -30,12 +30,16 @@ export default function Root() {
   const [notice, setNotice] = useState<string | null>(null);
   const [watching, setWatchingShown] = useState(() => App.watching());
   const [reclaim, setReclaim] = useState<Reclaim | null>(null);
+  const [changed, setChanged] = useState<Changed | null>(null);
   const [panel, setPanel] = useState(false);
+  const [tab, setTab] = useState<Tab>("reclaim");
   const [groupConfirm, setGroupConfirm] = useState<{ group: Group; busy: boolean; error: string | null } | null>(null);
 
-  function openPanel(open: boolean) {
+  function openPanel(open: boolean, on: Tab = tab) {
     setPanel(open);
-    App.showReclaimable(open);
+    setTab(on);
+    // The map's marks: what can go, while that tab is shown.
+    App.showReclaimable(open && on === "reclaim");
   }
 
   /** The map, the list of what can go and the disk's space, after a change. */
@@ -250,9 +254,11 @@ export default function Root() {
     if (phase.name === "ready") {
       show(0);
       setReclaim(App.reclaimable());
+      setChanged(App.changed());
     } else {
       intro();
       setReclaim(null);
+      setChanged(null);
       setPanel(false);
       App.showReclaimable(false);
     }
@@ -387,8 +393,24 @@ export default function Root() {
             )}
           </nav>
           <div className="deck-actions">
+            {changed && Math.abs(changed.after - changed.before) >= 64 * 1024 * 1024 && (
+              <button
+                className="control control-quiet control-changed"
+                data-sign={changed.after >= changed.before ? "up" : "down"}
+                aria-pressed={panel && tab === "changed"}
+                onClick={() => openPanel(!(panel && tab === "changed"), "changed")}
+              >
+                {changed.after >= changed.before ? "+" : "−"}
+                {bytes(Math.abs(changed.after - changed.before))} since{" "}
+                {new Date(changed.since_ms).toLocaleDateString(undefined, { day: "numeric", month: "short" })}
+              </button>
+            )}
             {reclaim && reclaim.size > 0 && (
-              <button className="control control-reclaim" aria-pressed={panel} onClick={() => openPanel(!panel)}>
+              <button
+                className="control control-reclaim"
+                aria-pressed={panel && tab === "reclaim"}
+                onClick={() => openPanel(!(panel && tab === "reclaim"), "reclaim")}
+              >
                 <span className="led" data-on="" aria-hidden="true" />
                 {bytes(reclaim.size)} can go
               </button>
@@ -496,8 +518,15 @@ export default function Root() {
         )}
       </section>
 
-      {panel && reclaim && (
-        <ReclaimPanel
+      {panel && (
+        <SidePanel
+          tab={tab}
+          onTab={(on) => openPanel(true, on)}
+          changed={changed}
+          onGoTo={(parent, node) => {
+            show(parent);
+            App.highlight(node);
+          }}
           reclaim={reclaim}
           busy={groupConfirm?.busy ? groupConfirm.group.id : null}
           onClean={(group) => setGroupConfirm({ group, busy: false, error: null })}

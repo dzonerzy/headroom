@@ -12,6 +12,7 @@ const map_layer = @import("map.zig");
 const elevate = @import("elevate.zig");
 const removing = @import("remove.zig");
 const rules = @import("rules.zig");
+const snapshot = @import("snapshot.zig");
 
 pub const App = struct {
     pub const async_methods = .{ "scan", "remove", "removeMany", "emptyBin" };
@@ -98,6 +99,26 @@ pub const App = struct {
 
     pub const Removed = struct { size: u64, files: u64 };
 
+    /// What changed since the folder's last scan.
+    pub const Changed = struct {
+        since_ms: i64,
+        before: u64,
+        after: u64,
+        grew: []const Moved,
+        shrank: []const Moved,
+    };
+
+    pub const Moved = struct {
+        /// From the folder scanned.
+        path: []const u8,
+        before: u64,
+        after: u64,
+        /// Where it is in the tree now (null: it is gone).
+        node: ?u32,
+        /// Where the map goes for it.
+        parent: ?u32,
+    };
+
     /// What a group's cleaning did.
     pub const Cleaned = struct {
         size: u64,
@@ -166,6 +187,11 @@ pub const App = struct {
     finds: []const rules.Find = &.{},
     found: std.DynamicBitSetUnmanaged = .{},
     marks_shown: bool = false,
+    /// Where snapshots are kept (null: not kept); what changed since the
+    /// scanned folder's previous scan, in its own arena.
+    data_dir: ?[]const u8 = null,
+    changes: ?snapshot.Changes = null,
+    changes_arena: ?std.heap.ArenaAllocator = null,
 
     /// Set by main.zig: the tray, notifications and the window are its.
     plume_app: ?*plume.App = null,
@@ -195,6 +221,53 @@ pub const App = struct {
         if (self.tree) |*t| t.deinit(gpa);
         gpa.free(self.finds);
         self.found.deinit(gpa);
+        if (self.changes_arena) |*arena| arena.deinit();
+    }
+
+    /// What changed since the previous scan of `tree`'s folder (kept in a
+    /// file per folder), then this scan kept for the next one.
+    fn compareAndKeep(self: *App, tree: *const scanner.Tree) ?struct { arena: std.heap.ArenaAllocator, changes: ?snapshot.Changes } {
+        const dir = self.data_dir orelse return null;
+        var arena: std.heap.ArenaAllocator = .init(gpa);
+        const a = arena.allocator();
+        const folder = std.fs.path.join(a, &.{ dir, "snapshots" }) catch return null;
+        const file = snapshot.fileFor(a, folder, tree.root) catch return null;
+        const cwd = std.Io.Dir.cwd();
+        var changes: ?snapshot.Changes = null;
+        if (cwd.readFileAlloc(self.io, file, a, .limited(64 * 1024 * 1024))) |bytes| {
+            if (snapshot.parse(a, bytes)) |old| {
+                changes = snapshot.diff(a, &old, tree) catch null;
+            } else |_| {}
+        } else |_| {}
+        const now = std.Io.Clock.real.now(self.io).toMilliseconds();
+        if (snapshot.take(a, tree, now)) |bytes| {
+            cwd.createDirPath(self.io, folder) catch {};
+            cwd.writeFile(self.io, .{ .sub_path = file, .data = bytes }) catch {};
+        } else |_| {}
+        return .{ .arena = arena, .changes = changes };
+    }
+
+    /// What changed since the previous scan of this folder; null on its
+    /// first scan.
+    pub fn changed(self: *App, allocator: std.mem.Allocator) error{OutOfMemory}!?Changed {
+        self.lock.lockUncancelable(self.io);
+        defer self.lock.unlock(self.io);
+        const tree = &(self.tree orelse return null);
+        const c = self.changes orelse return null;
+        const lists = [2][]const snapshot.Change{ c.grew, c.shrank };
+        var out: [2][]Moved = undefined;
+        for (lists, &out) |list, *moved| {
+            const kept = list[0..@min(list.len, 15)];
+            moved.* = try allocator.alloc(Moved, kept.len);
+            for (kept, moved.*) |change, *m| m.* = .{
+                .path = try allocator.dupe(u8, change.path),
+                .before = change.before,
+                .after = change.after,
+                .node = change.node,
+                .parent = if (change.node) |n| tree.node(n).parent else null,
+            };
+        }
+        return .{ .since_ms = c.since_ms, .before = c.before, .after = c.after, .grew = out[0], .shrank = out[1] };
     }
 
     /// Where a scan starts by default: the user's home folder.
@@ -256,6 +329,8 @@ pub const App = struct {
         const finds: []const rules.Find = rules.find(gpa, &tree, scanner.Tree.root_index) catch &.{};
         var found = std.DynamicBitSetUnmanaged.initEmpty(gpa, tree.nodes.items.len) catch std.DynamicBitSetUnmanaged{};
         if (found.bit_length > 0) for (finds) |f| found.set(f.node);
+        // What changed since this folder's last scan; this one kept.
+        const compared = self.compareAndKeep(&tree);
         const top = tree.node(scanner.Tree.root_index);
         const result: Scanned = .{
             .path = try allocator.dupe(u8, tree.root),
@@ -276,6 +351,13 @@ pub const App = struct {
         self.finds = finds;
         self.found.deinit(gpa);
         self.found = found;
+        if (self.changes_arena) |*arena| arena.deinit();
+        self.changes_arena = null;
+        self.changes = null;
+        if (compared) |c| {
+            self.changes_arena = c.arena;
+            self.changes = c.changes;
+        }
         self.generation +%= 1;
         self.root = scanner.Tree.root_index;
         self.legend_root = null;

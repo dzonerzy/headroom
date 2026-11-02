@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { Group, Place, Reclaim } from "./bindings";
+import type { Changed, Group, Moved, Place, Reclaim } from "./bindings";
 import { bytes, bytesParts, exact, plural } from "./format";
 import { bin } from "./Remove";
 
@@ -9,6 +9,116 @@ const risks = {
   careful: "Look before clearing",
 } as const;
 
+export type Tab = "reclaim" | "changed";
+
+/** The side panel: what can go, and what changed since the last scan. */
+export function SidePanel(props: {
+  tab: Tab;
+  onTab: (tab: Tab) => void;
+  onClose: () => void;
+  reclaim: Reclaim | null;
+  changed: Changed | null;
+  busy: string | null;
+  onClean: (group: Group) => void;
+  onCopy: (command: string) => void;
+  onGo: (place: Place) => void;
+  onHover: (place: Place | null) => void;
+  onGoTo: (parent: number, node: number) => void;
+}) {
+  const { tab, onTab, onClose } = props;
+  return (
+    <aside className="reclaim" aria-label="What can go and what changed">
+      <nav className="side-tabs" aria-label="Panel">
+        <button className="side-tab" aria-current={tab === "reclaim" ? "page" : undefined} onClick={() => onTab("reclaim")}>
+          Can go
+        </button>
+        <button className="side-tab" aria-current={tab === "changed" ? "page" : undefined} onClick={() => onTab("changed")}>
+          Changed
+        </button>
+        <button className="control control-quiet reclaim-close" onClick={onClose} aria-label="Close">
+          ✕
+        </button>
+      </nav>
+      {tab === "reclaim" ? (
+        props.reclaim ? (
+          <ReclaimList {...props} reclaim={props.reclaim} />
+        ) : (
+          <p className="reclaim-empty">Scan a folder to see what can go.</p>
+        )
+      ) : (
+        <ChangesList changed={props.changed} onGoTo={props.onGoTo} />
+      )}
+    </aside>
+  );
+}
+
+/** What changed since the folder's previous scan, where it happened. */
+function ChangesList({ changed, onGoTo }: { changed: Changed | null; onGoTo: (parent: number, node: number) => void }) {
+  if (!changed) return <p className="reclaim-empty">The next scan of this folder shows what changed since this one.</p>;
+  const delta = changed.after - changed.before;
+  const [value, unit] = bytesParts(Math.abs(delta));
+  const since = new Date(changed.since_ms).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  const biggest = Math.max(1, ...[...changed.grew, ...changed.shrank].map((m) => Math.abs(m.after - m.before)));
+  const list = (moved: Moved[], label: string) =>
+    moved.length > 0 && (
+      <section className="changes-section">
+        <h3 className="changes-label">{label}</h3>
+        <ul className="changes-list">
+          {moved.map((m) => {
+            const d = m.after - m.before;
+            return (
+              <li key={m.path}>
+                <button
+                  className="reclaim-place changes-entry"
+                  disabled={m.node === null || m.parent === null}
+                  onClick={() => m.node !== null && m.parent !== null && onGoTo(m.parent, m.node)}
+                  title={m.path}
+                >
+                  <span className="reclaim-path">{m.path}</span>
+                  <span className="changes-delta" data-sign={d > 0 ? "up" : "down"}>
+                    {d > 0 ? "+" : "−"}
+                    {bytes(Math.abs(d))}
+                  </span>
+                  <span className="changes-detail">
+                    {m.before === 0 ? "new" : m.after === 0 ? "gone" : `${bytes(m.before)} to ${bytes(m.after)}`}
+                  </span>
+                  <span className="changes-track">
+                    <span className="changes-bar" data-sign={d > 0 ? "up" : "down"} style={{ width: `${Math.max(2, (Math.abs(d) / biggest) * 100)}%` }} />
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      </section>
+    );
+  return (
+    <div className="side-body">
+      <header className="reclaim-head">
+        <div>
+          <p className="figure reclaim-figure changes-figure" data-sign={delta >= 0 ? "up" : "down"}>
+            <span className="figure-value">
+              {delta >= 0 ? "+" : "−"}
+              {value}
+            </span>
+            <span className="figure-unit">{unit}</span>
+          </p>
+          <p className="reclaim-caption">
+            since {since}: {bytes(changed.before)} then, {bytes(changed.after)} now
+          </p>
+        </div>
+      </header>
+      <div className="reclaim-groups">
+        {changed.grew.length === 0 && changed.shrank.length === 0 && (
+          <p className="reclaim-empty">Nothing changed by more than 64 MB.</p>
+        )}
+        {list(changed.grew, "Grew")}
+        {list(changed.shrank, "Shrank")}
+      </div>
+    </div>
+  );
+}
+
 type Props = {
   reclaim: Reclaim;
   busy: string | null;
@@ -16,16 +126,15 @@ type Props = {
   onCopy: (command: string) => void;
   onGo: (place: Place) => void;
   onHover: (place: Place | null) => void;
-  onClose: () => void;
 };
 
 /** What can go: the rules' findings by kind, biggest first, each with what
  * it is, how safe, and the way to clear it. */
-export function ReclaimPanel({ reclaim, busy, onClean, onCopy, onGo, onHover, onClose }: Props) {
+function ReclaimList({ reclaim, busy, onClean, onCopy, onGo, onHover }: Props) {
   const [open, setOpen] = useState<string | null>(null);
   const [value, unit] = bytesParts(reclaim.size);
   return (
-    <aside className="reclaim" aria-label="What can go">
+    <div className="side-body">
       <header className="reclaim-head">
         <div>
           <p className="figure reclaim-figure">
@@ -37,9 +146,6 @@ export function ReclaimPanel({ reclaim, busy, onClean, onCopy, onGo, onHover, on
             {reclaim.careful > 0 && <>; {bytes(reclaim.careful)} more to look at first</>}
           </p>
         </div>
-        <button className="control control-quiet reclaim-close" onClick={onClose} aria-label="Close">
-          ✕
-        </button>
       </header>
 
       {reclaim.groups.length === 0 ? (
@@ -93,7 +199,7 @@ export function ReclaimPanel({ reclaim, busy, onClean, onCopy, onGo, onHover, on
           ))}
         </ul>
       )}
-    </aside>
+    </div>
   );
 }
 
