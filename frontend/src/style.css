@@ -515,6 +515,40 @@
     color: var(--quiet);
     font-size: 0.86rem;
   }
+
+  .hidden-space {
+    display: flex;
+    flex: 0 1 44rem;
+    align-items: center;
+    gap: 0.9rem;
+    min-width: 30rem;
+  }
+
+  .hidden-space .status {
+    flex: 1;
+    text-align: right;
+  }
+
+  .hidden-space .control {
+    flex: none;
+  }
+
+  .status-strong {
+    color: var(--ink);
+    font-weight: 650;
+  }
+
+  .wordmark-mode {
+    margin-left: 0.6rem;
+    border: 1px solid #2a394a;
+    border-radius: 999px;
+    padding: 0.05rem 0.5rem;
+    color: var(--quiet);
+    font-size: 0.75rem;
+    font-weight: 560;
+    font-stretch: 100%;
+    vertical-align: 0.15em;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

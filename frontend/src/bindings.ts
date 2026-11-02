@@ -87,6 +87,9 @@ export interface Progress {
 export interface AppErrors {
   home: never;
   space: never;
+  startupScan: never;
+  admin: never;
+  restartAsAdmin: "Unsupported" | "OutOfMemory" | "Declined";
   intro: never;
   scan: "AccessDenied" | "Canceled" | "OutOfMemory" | "FileNotFound" | "NotDir" | "Busy";
   cancelScan: never;
@@ -97,6 +100,10 @@ export interface AppErrors {
 export interface AppBindings {
   home(): string;
   space(arg1: string): Space | null;
+  startupScan(): string | null;
+  admin(): boolean;
+  /** Fails with PlumeError<AppErrors["restartAsAdmin"]>. */
+  restartAsAdmin(arg1: string): void;
   intro(arg1: number, arg2: number, arg3: number, arg4: number, arg5: number): void;
   /** Fails with PlumeError<AppErrors["scan"]>. */
   scan(arg1: string): Promise<Scanned>;
@@ -257,6 +264,15 @@ export const App: AppBindings = {
   },
   space(arg1) {
     try { return native.space(arg1); } catch (error) { throw plumeError(error); }
+  },
+  startupScan() {
+    try { return native.startupScan(); } catch (error) { throw plumeError(error); }
+  },
+  admin() {
+    try { return native.admin(); } catch (error) { throw plumeError(error); }
+  },
+  restartAsAdmin(arg1) {
+    try { return native.restartAsAdmin(arg1); } catch (error) { throw plumeError(error); }
   },
   intro(arg1, arg2, arg3, arg4, arg5) {
     try { return native.intro(arg1, arg2, arg3, arg4, arg5); } catch (error) { throw plumeError(error); }

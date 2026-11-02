@@ -77,6 +77,9 @@ interface Progress {
 interface AppErrors {
   home: never;
   space: never;
+  startupScan: never;
+  admin: never;
+  restartAsAdmin: "Unsupported" | "OutOfMemory" | "Declined";
   intro: never;
   scan: "AccessDenied" | "Canceled" | "OutOfMemory" | "FileNotFound" | "NotDir" | "Busy";
   cancelScan: never;
@@ -87,6 +90,10 @@ interface AppErrors {
 interface AppBindings {
   home(): string;
   space(arg1: string): Space | null;
+  startupScan(): string | null;
+  admin(): boolean;
+  /** Fails with PlumeError<AppErrors["restartAsAdmin"]>. */
+  restartAsAdmin(arg1: string): void;
   intro(arg1: number, arg2: number, arg3: number, arg4: number, arg5: number): void;
   /** Fails with PlumeError<AppErrors["scan"]>. */
   scan(arg1: string): Promise<Scanned>;

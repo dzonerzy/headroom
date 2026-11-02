@@ -62,6 +62,10 @@ const extensions = blk: {
 
 /// The category of a file named `name`.
 pub fn of(name: []const u8) Category {
+    // Windows' memory on disk, not drivers for all their ".sys".
+    for ([_][]const u8{ "pagefile.sys", "hiberfil.sys", "swapfile.sys" }) |memory| {
+        if (std.ascii.eqlIgnoreCase(name, memory)) return .other;
+    }
     // Versioned shared libraries: libLLVM.so.19.1, libz3.so.4.
     if (std.mem.indexOf(u8, name, ".so.") != null) return .binaries;
     const dot = std.mem.lastIndexOfScalar(u8, name, '.') orelse return .other;
@@ -76,6 +80,8 @@ test "categories" {
     try std.testing.expectEqual(Category.code, of("main.zig"));
     try std.testing.expectEqual(Category.binaries, of("ZEROG.DLL"));
     try std.testing.expectEqual(Category.binaries, of("libLLVM.so.19.1"));
+    try std.testing.expectEqual(Category.other, of("pagefile.sys"));
+    try std.testing.expectEqual(Category.binaries, of("ntfs.sys"));
     try std.testing.expectEqual(Category.build, of("combase.pdb"));
     try std.testing.expectEqual(Category.archives, of("ext4.vhdx"));
     try std.testing.expectEqual(Category.other, of(".gitignore"));

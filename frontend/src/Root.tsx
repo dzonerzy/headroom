@@ -21,6 +21,16 @@ export default function Root() {
   const home = useRef(App.home());
   /** The folder on the map, for laying it out again at a new size. */
   const shown = useRef<number | null>(null);
+  const admin = useRef(App.admin());
+  const [elevating, setElevating] = useState(false);
+
+  // Restarted as administrator to scan a folder again: scan it now.
+  useEffect(() => {
+    const path = App.startupScan();
+    if (path) void scan(path);
+    // Once, at the start.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(
     () =>
@@ -71,6 +81,18 @@ export default function Root() {
       };
       const message = error instanceof PlumeError ? (reasons[error.code as string] ?? String(error.code)) : String(error);
       setPhase({ name: "failed", path, message });
+    }
+  }
+
+  /** Headroom again as administrator, scanning `path`; this one quits. */
+  function scanAsAdmin(path: string) {
+    setElevating(true);
+    try {
+      App.restartAsAdmin(path);
+      Plume.app.quit();
+    } catch {
+      // The prompt declined: nothing changes.
+      setElevating(false);
     }
   }
 
@@ -174,7 +196,10 @@ export default function Root() {
     <main className="console">
       <header className="deck">
         <div className="deck-row">
-          <h1 className="wordmark">Headroom</h1>
+          <h1 className="wordmark">
+            Headroom
+            {admin.current && <span className="wordmark-mode">as administrator</span>}
+          </h1>
           <nav className="crumbs" aria-label="Folder">
             {view ? (
               view.crumbs.map((crumb, i) => (
@@ -293,14 +318,49 @@ export default function Root() {
           ))}
         </ul>
         {phase.name === "ready" && (
-          <p className="status">
-            {exact(phase.scanned.entries)} entries scanned in {seconds(phase.scanned.ms)}
-            {phase.scanned.unreadable > 0 &&
-              `, ${exact(phase.scanned.unreadable)} ${plural(phase.scanned.unreadable, "folder", "folders")} not readable`}
-          </p>
+          <Hidden scanned={phase.scanned} space={space} admin={admin.current} elevating={elevating} onElevate={scanAsAdmin} />
         )}
       </footer>
     </main>
+  );
+}
+
+/** How the scan went, and what it could not see. After a whole disk scanned
+ * without administrator rights (Windows), what the disk says is used but
+ * the scan did not find is behind folders only an administrator can read:
+ * said, with a way to scan again as one. */
+function Hidden(props: {
+  scanned: Scanned;
+  space: Space | null;
+  admin: boolean;
+  elevating: boolean;
+  onElevate: (path: string) => void;
+}) {
+  const { scanned, space, admin, elevating, onElevate } = props;
+  const wholeDisk = /^[A-Za-z]:\\$/.test(scanned.path) || scanned.path === "/";
+  const used = space ? space.total - space.free : 0;
+  const missing = used - scanned.size;
+  const offer = Plume.platform === "windows" && !admin && wholeDisk && scanned.unreadable > 0 && missing > 1024 ** 3;
+  const summary = `${exact(scanned.entries)} entries scanned in ${seconds(scanned.ms)}`;
+  if (offer) {
+    return (
+      <div className="hidden-space">
+        <p className="status">
+          {summary}. <span className="status-strong">{bytes(missing)}</span> of the disk is in{" "}
+          {exact(scanned.unreadable)} {plural(scanned.unreadable, "folder", "folders")} only an administrator can read.
+        </p>
+        <button className="control" onClick={() => onElevate(scanned.path)} disabled={elevating}>
+          Scan again as administrator
+        </button>
+      </div>
+    );
+  }
+  return (
+    <p className="status">
+      {summary}
+      {scanned.unreadable > 0 &&
+        `, ${exact(scanned.unreadable)} ${plural(scanned.unreadable, "folder", "folders")} not readable`}
+    </p>
   );
 }
 

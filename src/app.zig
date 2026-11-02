@@ -9,6 +9,7 @@ const treemap = @import("treemap.zig");
 const categories = @import("categories.zig");
 const volume = @import("volume.zig");
 const map_layer = @import("map.zig");
+const elevate = @import("elevate.zig");
 
 pub const App = struct {
     pub const async_methods = .{"scan"};
@@ -73,6 +74,10 @@ pub const App = struct {
     io: std.Io,
     home_path: []const u8,
     map: *map_layer.Map,
+    /// `--scan <path>` (a restart as administrator): scanned at the start.
+    startup_scan: ?[]const u8 = null,
+    /// The scanned disk's used bytes: how much of it a scan has lit.
+    scan_used: u64 = 0,
     /// Set by main.zig: how the scan's thread sends progress.
     events: ?plume.Events(Events) = null,
 
@@ -109,11 +114,30 @@ pub const App = struct {
         return volume.space(gpa, path);
     }
 
+    /// The folder to scan at once (Headroom restarted as administrator to
+    /// scan it), the first time it is asked.
+    pub fn startupScan(self: *App) ?[]const u8 {
+        defer self.startup_scan = null;
+        return self.startup_scan;
+    }
+
+    /// Whether Headroom runs as administrator (root on Linux).
+    pub fn admin(self: *App) bool {
+        _ = self;
+        return elevate.isAdmin();
+    }
+
+    /// Headroom again as administrator (Windows' prompt), scanning `path`
+    /// once it starts; then the page quits this one.
+    pub fn restartAsAdmin(self: *App, path: []const u8) elevate.Error!void {
+        return elevate.restart(gpa, self.io, path);
+    }
+
     /// The intro on the map (no treemap yet: the start, a scan running, a
     /// failed one), in the map's area as for view().
     pub fn intro(self: *App, x: f32, y: f32, width: f32, height: f32, scale: f32) void {
         self.map.showIntro(.{ .x = x, .y = y, .w = width, .h = height }, scale);
-        if (!self.scanning.load(.acquire)) self.map.setActivity(idle_detail, 1);
+        if (!self.scanning.load(.acquire)) self.map.setActivity(idle_detail, 1, 0);
     }
 
     const idle_detail = 9;
@@ -124,8 +148,9 @@ pub const App = struct {
         if (self.scanning.swap(true, .acq_rel)) return error.Busy;
         defer self.scanning.store(false, .release);
         self.cancel.store(false, .monotonic);
-        self.map.setActivity(4, 2.6);
-        defer self.map.setActivity(idle_detail, 1);
+        self.scan_used = if (volume.space(gpa, path)) |s| s.total - s.free else 0;
+        self.map.setActivity(4, 2.6, 0);
+        defer self.map.setActivity(idle_detail, 1, 0);
 
         const start = std.Io.Clock.awake.now(self.io);
         var tree = try scanner.scan(gpa, self.io, path, .{
@@ -158,8 +183,10 @@ pub const App = struct {
     fn report(context: *anyopaque, progress: scanner.Progress) void {
         const self: *App = @ptrCast(@alignCast(context));
         // A level deeper for every tenfold of files: 1,000 files 7, a million 10.
+        // Lit: the share of the disk's used space found so far.
         const files: f32 = @floatFromInt(progress.files + 1);
-        self.map.setActivity(std.math.clamp(4 + std.math.log10(files), 4, 11), 2.6);
+        const lit: f32 = if (self.scan_used == 0) 0 else @floatCast(@min(@as(f64, @floatFromInt(progress.bytes)) / @as(f64, @floatFromInt(self.scan_used)), 1));
+        self.map.setActivity(std.math.clamp(4 + std.math.log10(files), 4, 11), 2.6, lit);
         if (self.events) |events| events.emit(.progress, .{
             .files = progress.files,
             .folders = progress.directories,

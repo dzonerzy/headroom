@@ -44,11 +44,13 @@ pub const Map = struct {
     zoom_start: f64 = 0,
     zoom_pending: bool = false,
     /// Before a treemap (the start, a scan running): a treemap that is not
-    /// one, drawn by the shader alone, breathing; `detail` levels deep, its
-    /// clock `energy` times as fast.
+    /// one, drawn by the shader alone, breathing, unlit; `detail` levels
+    /// deep, its clock `energy` times as fast, `lit` of its tiles lit by a
+    /// scan (the share of the disk found).
     intro: bool = false,
     detail: f32 = 5,
     energy: f32 = 1,
+    lit: f32 = 0,
     clock: f64 = 0,
     last_ms: f64 = 0,
     /// The compositor thread's.
@@ -77,6 +79,7 @@ pub const Map = struct {
         i_time: gl.Int,
         i_detail: gl.Int,
         i_energy: gl.Int,
+        i_lit: gl.Int,
     };
 
     const Extra = struct {
@@ -128,12 +131,14 @@ pub const Map = struct {
         map.redraw();
     }
 
-    /// How deep and how fast the intro is (a scan: deeper as files come).
-    pub fn setActivity(map: *Map, detail: f32, energy: f32) void {
+    /// How deep, how fast and how lit the intro is (a scan: deeper as files
+    /// come, lit as the disk is found).
+    pub fn setActivity(map: *Map, detail: f32, energy: f32, lit: f32) void {
         map.lock.lockUncancelable(map.io);
         defer map.lock.unlock(map.io);
         map.detail = detail;
         map.energy = energy;
+        map.lit = lit;
     }
 
     pub fn hover(map: *Map, index: ?usize) void {
@@ -199,6 +204,7 @@ pub const Map = struct {
         const clock = map.clock;
         const detail = map.detail;
         const energy = map.energy;
+        const lit = map.lit;
         map.lock.unlock(map.io);
 
         const height: f32 = @floatFromInt(frame.height);
@@ -217,6 +223,7 @@ pub const Map = struct {
             c.glUniform1f(g.i_time, @floatCast(clock));
             c.glUniform1f(g.i_detail, detail);
             c.glUniform1f(g.i_energy, energy);
+            c.glUniform1f(g.i_lit, lit);
             c.glBindVertexArray(0);
             c.glDrawArrays(gl.TRIANGLES, 0, 3);
             c.glDisable(SCISSOR_TEST);
@@ -282,6 +289,7 @@ pub const Map = struct {
             .i_time = core.glGetUniformLocation(intro, "time"),
             .i_detail = core.glGetUniformLocation(intro, "detail"),
             .i_energy = core.glGetUniformLocation(intro, "energy"),
+            .i_lit = core.glGetUniformLocation(intro, "lit"),
         };
         return &map.gpu.?;
     }
@@ -350,11 +358,12 @@ const intro_vertex_source =
     \\}
 ;
 
-/// A treemap that is not one: every pixel walks a tree of splits whose
-/// ratios drift with time, so tiles breathe and slide into each other. The
-/// first levels are folder frames with header strips, the leaves cushions
-/// in the legend's colors (half of them the quiet slate), as the real map
-/// draws them. A band of light sweeps across, like a signal on a meter.
+/// A treemap that is not one, unlit: every pixel walks a tree of splits
+/// whose ratios drift with time, so tiles breathe and slide into each other;
+/// folder frames with header strips first, then dark tiles outlined in
+/// slate. Color is kept for the real map, where it means something: here a
+/// scan lights tiles in the meter's green as it finds the disk (`lit`), and
+/// a band of light sweeps across, like a signal on a meter.
 const intro_fragment_source =
     \\#version 300 es
     \\precision highp float;
@@ -364,12 +373,10 @@ const intro_fragment_source =
     \\uniform float time;
     \\uniform float detail;
     \\uniform float energy;
+    \\uniform float lit;
     \\out vec4 color;
-    \\const vec3 palette[7] = vec3[7](
-    \\  vec3(0.357, 0.553, 0.937), vec3(0.816, 0.541, 0.235), vec3(0.839, 0.353, 0.373),
-    \\  vec3(0.608, 0.435, 0.863), vec3(0.247, 0.714, 0.561), vec3(0.851, 0.761, 0.361),
-    \\  vec3(0.310, 0.706, 0.788));
-    \\const vec3 slate = vec3(0.271, 0.337, 0.420);
+    \\const vec3 level = vec3(0.322, 0.780, 0.635);
+    \\const vec3 slate = vec3(0.235, 0.306, 0.388);
     \\float hash(float n) { return fract(sin(n * 91.3458) * 47453.5453); }
     \\void main() {
     \\  vec2 p = vec2(gl_FragCoord.x, size.y - gl_FragCoord.y) / scale - viewport.xy;
@@ -404,27 +411,34 @@ const intro_fragment_source =
     \\    else { if (side > 0.5) lo.y = cut; else hi.y = cut; }
     \\    id = id * 2.0 + side;
     \\  }
-    \\  vec3 c;
-    \\  if (frameAt >= 0) {
-    \\    c = mix(vec3(0.086, 0.125, 0.169), vec3(0.204, 0.275, 0.357), float(frameAt) * 0.13);
-    \\    if (header) c = mix(c, vec3(0.62, 0.72, 0.84), 0.2);
-    \\    vec2 d = min(p - lo, hi - p);
-    \\    if (min(d.x, d.y) < 1.0) c *= 0.55;
-    \\  } else {
-    \\    vec2 dims = max(hi - lo, vec2(1.0));
-    \\    vec2 q = (p - lo) / dims * 2.0 - 1.0;
-    \\    float pick = hash(id * 1.618 + 4.0);
-    \\    vec3 base = pick < 0.5 ? slate : palette[int(hash(id * 7.31) * 7.0) % 7];
-    \\    float bump = (1.0 - 0.6 * q.x * q.x) * (1.0 - 0.6 * q.y * q.y);
-    \\    c = base * (0.42 + 0.62 * bump - 0.16 * (q.x * 0.5 + q.y * 0.85));
-    \\    vec2 d = min(p - lo, hi - p);
-    \\    if (min(d.x, d.y) < 0.75) c *= 0.32;
-    \\  }
     \\  // The sweep: a soft diagonal band of light crossing the map.
     \\  float span = viewport.z + viewport.w;
     \\  float band = (p.x + p.y * 0.6) / span - fract(time * 0.035 * (energy > 1.5 ? 2.5 : 1.0)) * 1.6 + 0.3;
     \\  float glow = exp(-band * band * 40.0);
-    \\  c *= 0.66 + 0.6 * glow;
+    \\  vec2 d = min(p - lo, hi - p);
+    \\  float edge = min(d.x, d.y);
+    \\  vec3 c;
+    \\  if (frameAt >= 0) {
+    \\    // A folder frame: near the background, its header a shade up.
+    \\    c = mix(vec3(0.067, 0.098, 0.133), vec3(0.110, 0.149, 0.196), float(frameAt) * 0.3);
+    \\    if (header) c += vec3(0.022, 0.030, 0.040);
+    \\    if (edge < 1.0) c = mix(c, slate, 0.35 + 0.5 * glow);
+    \\  } else {
+    \\    vec2 dims = max(hi - lo, vec2(1.0));
+    \\    vec2 q = (p - lo) / dims * 2.0 - 1.0;
+    \\    float bump = (1.0 - 0.6 * q.x * q.x) * (1.0 - 0.6 * q.y * q.y);
+    \\    float shade = 0.42 + 0.62 * bump - 0.16 * (q.x * 0.5 + q.y * 0.85);
+    \\    if (hash(id * 3.7 + 1.0) < lit) {
+    \\      // Found by the scan: lit like the meter's segments.
+    \\      c = level * shade * (0.75 + 0.35 * hash(id * 5.1));
+    \\      if (edge < 0.75) c *= 0.35;
+    \\    } else {
+    \\      // Unlit: a dark tile, its outline catching the sweep.
+    \\      c = vec3(0.071, 0.102, 0.137) * (0.8 + 0.3 * shade);
+    \\      if (edge < 1.0) c = mix(c, slate, 0.45 + 0.55 * glow);
+    \\    }
+    \\  }
+    \\  c *= 0.9 + 0.35 * glow;
     \\  // Dimmer where the words are (the left), darker at the edges.
     \\  vec2 uv = p / viewport.zw;
     \\  c *= mix(0.55, 1.0, smoothstep(0.15, 0.75, uv.x));

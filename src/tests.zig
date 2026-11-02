@@ -13,6 +13,7 @@ test {
     _ = @import("treemap.zig");
     _ = @import("categories.zig");
     _ = @import("volume.zig");
+    _ = @import("elevate.zig");
 }
 
 fn write(dir: std.Io.Dir, path: []const u8, bytes: usize) !void {

@@ -18,7 +18,14 @@ pub fn main(init: std.process.Init) !void {
     };
 
     const home = init.environ_map.get(if (builtin.os.tag == .windows) "USERPROFILE" else "HOME") orelse "";
-    var state: App = .{ .io = init.io, .home_path = home, .map = &map };
+    const args = try init.minimal.args.toSlice(init.arena.allocator());
+    var state: App = .{
+        .io = init.io,
+        .home_path = home,
+        .map = &map,
+        // Restarted as administrator: the folder to scan again.
+        .startup_scan = @import("elevate.zig").scanArgument(args),
+    };
     defer state.deinit();
     state.events = app.events(App.Events);
     try app.bind("App", App, &state);
