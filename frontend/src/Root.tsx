@@ -645,7 +645,9 @@ function Hidden(props: {
   const used = space ? space.total - space.free : 0;
   const missing = used - scanned.size;
   const offer = Plume.platform === "windows" && !admin && wholeDisk && scanned.unreadable > 0 && missing > 1024 ** 3;
-  const summary = `${exact(scanned.entries)} entries scanned in ${seconds(scanned.ms)}`;
+  const summary = scanned.from_mft
+    ? `${exact(scanned.entries)} entries read from the disk's file table in ${seconds(scanned.ms)}`
+    : `${exact(scanned.entries)} entries scanned in ${seconds(scanned.ms)}`;
   if (offer) {
     return (
       <div className="hidden-space">

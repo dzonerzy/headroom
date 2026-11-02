@@ -46,6 +46,7 @@ export interface Scanned {
   entries: number;
   unreadable: number;
   ms: number;
+  from_mft: boolean;
 }
 
 export interface View {

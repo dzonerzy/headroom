@@ -19,6 +19,7 @@ test {
     _ = @import("rules.zig");
     _ = @import("snapshot.zig");
     _ = @import("disks.zig");
+    _ = @import("ntfs.zig");
 }
 
 fn write(dir: std.Io.Dir, path: []const u8, bytes: usize) !void {

@@ -13,6 +13,7 @@
 
 const std = @import("std");
 const builtin = @import("builtin");
+const ntfs = @import("ntfs.zig");
 const Io = std.Io;
 const Allocator = std.mem.Allocator;
 
@@ -50,6 +51,9 @@ pub const Tree = struct {
     root: [:0]const u8,
     /// Directories that could not be read.
     unreadable: u64 = 0,
+    /// Read from an NTFS volume's file table (administrator, Windows):
+    /// hard links counted once, nothing unreadable.
+    from_mft: bool = false,
 
     pub const root_index: u32 = 0;
 
@@ -109,6 +113,9 @@ pub const Options = struct {
     report_ms: u32 = 100,
     /// Set from any thread: the scan stops and returns error.Canceled.
     cancel: ?*const std.atomic.Value(bool) = null,
+    /// Windows: read the volume's file table when it can (as administrator,
+    /// on NTFS), folder by folder otherwise.
+    mft: bool = true,
 };
 
 pub const Error = error{ Canceled, NotDir, FileNotFound, AccessDenied } || Allocator.Error;
@@ -121,16 +128,36 @@ pub fn scan(a: Allocator, io: Io, path: []const u8, options: Options) Error!Tree
         error.AccessDenied => error.AccessDenied,
         else => error.FileNotFound,
     };
-    var tree: Tree = .{ .root = root };
-    errdefer tree.deinit(a);
     {
-        var dir = Io.Dir.openDirAbsolute(io, root, .{}) catch |err| return switch (err) {
-            error.NotDir => error.NotDir,
-            error.AccessDenied => error.AccessDenied,
-            else => error.FileNotFound,
+        var dir = Io.Dir.openDirAbsolute(io, root, .{}) catch |err| {
+            a.free(root);
+            return switch (err) {
+                error.NotDir => error.NotDir,
+                error.AccessDenied => error.AccessDenied,
+                else => error.FileNotFound,
+            };
         };
         dir.close(io);
     }
+    // The volume's file table, when Windows lets it be read (administrator,
+    // NTFS): one sequential read, hard links once.
+    if (builtin.os.tag == .windows and options.mft) {
+        if (ntfs.readVolume(a, io, root, .{ .report = options.report, .cancel = options.cancel })) |t| {
+            a.free(root);
+            var read = t;
+            read.from_mft = true;
+            if (options.report) |report| report.call(report.context, .{ .files = read.node(0).files, .directories = 0, .bytes = read.node(0).size, .unreadable = 0 });
+            return read;
+        } else |err| switch (err) {
+            error.Canceled => {
+                a.free(root);
+                return error.Canceled;
+            },
+            else => {},
+        }
+    }
+    var tree: Tree = .{ .root = root };
+    errdefer tree.deinit(a);
     try tree.names.appendSlice(a, root);
     try tree.nodes.append(a, .{ .parent = 0, .name_start = 0, .name_len = @intCast(root.len), .kind = .directory, .size = 0, .files = 0 });
 

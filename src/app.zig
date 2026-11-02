@@ -37,6 +37,9 @@ pub const App = struct {
         entries: u64,
         unreadable: u64,
         ms: u64,
+        /// Read from the disk's file table (Windows, as administrator):
+        /// exact, hard links once.
+        from_mft: bool,
     };
 
     pub const Crumb = struct { node: u32, name: []const u8 };
@@ -362,6 +365,7 @@ pub const App = struct {
             .entries = tree.nodes.items.len,
             .unreadable = tree.unreadable,
             .ms = @intCast(@max(ms, 0)),
+            .from_mft = tree.from_mft,
         };
 
         self.lock.lockUncancelable(self.io);
