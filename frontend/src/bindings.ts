@@ -96,6 +96,12 @@ export interface Removed {
   files: number;
 }
 
+export interface Top {
+  name: string;
+  size: number;
+  folder: boolean;
+}
+
 export interface Progress {
   files: number;
   folders: number;
@@ -119,6 +125,11 @@ export interface AppErrors {
   watching: never;
   setWatching: "Unsupported";
   watchTick: never;
+  largest: "OutOfMemory";
+  scannedPath: "OutOfMemory";
+  openMain: never;
+  requestScan: never;
+  hidePopover: never;
 }
 
 export interface AppBindings {
@@ -144,6 +155,13 @@ export interface AppBindings {
   /** Fails with PlumeError<AppErrors["setWatching"]>. */
   setWatching(arg1: boolean): void;
   watchTick(): void;
+  /** Fails with PlumeError<AppErrors["largest"]>. */
+  largest(arg1: number): Top[];
+  /** Fails with PlumeError<AppErrors["scannedPath"]>. */
+  scannedPath(): string | null;
+  openMain(): void;
+  requestScan(arg1: string): void;
+  hidePopover(): void;
 }
 
 // The page runtime: the window, dialogs, clipboard, screens and menus.
@@ -337,5 +355,20 @@ export const App: AppBindings = {
   },
   watchTick() {
     try { return native.watchTick(); } catch (error) { throw plumeError(error); }
+  },
+  largest(arg1) {
+    try { return native.largest(arg1); } catch (error) { throw plumeError(error); }
+  },
+  scannedPath() {
+    try { return native.scannedPath(); } catch (error) { throw plumeError(error); }
+  },
+  openMain() {
+    try { return native.openMain(); } catch (error) { throw plumeError(error); }
+  },
+  requestScan(arg1) {
+    try { return native.requestScan(arg1); } catch (error) { throw plumeError(error); }
+  },
+  hidePopover() {
+    try { return native.hidePopover(); } catch (error) { throw plumeError(error); }
   },
 };

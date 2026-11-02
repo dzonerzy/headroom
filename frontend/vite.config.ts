@@ -6,4 +6,10 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   // plume dev loads plume.json's frontend.dev_url: keep them the same.
   server: { port: 5173, strictPort: true },
+  // Two pages: the window, and the tray's popover.
+  build: {
+    rollupOptions: {
+      input: { main: "index.html", tray: "tray.html" },
+    },
+  },
 });

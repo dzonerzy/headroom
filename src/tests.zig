@@ -41,6 +41,35 @@ fn shot(h: *plume.testing.Harness, name: []const u8) !void {
     try std.Io.Dir.cwd().writeFile(std.testing.io, .{ .sub_path = path, .data = png });
 }
 
+test "the tray's popover" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try write(tmp.dir, "games/big.pak", 900_000);
+    try write(tmp.dir, "photos/trip.jpg", 400_000);
+    try write(tmp.dir, "notes.md", 60_000);
+    const root = try tmp.dir.realPathFileAlloc(std.testing.io, ".", std.testing.allocator);
+    defer std.testing.allocator.free(root);
+
+    const h = try plume.testing.Harness.startProject(@import("plume_project"), .{ .page = "tray.html", .width = 340, .height = 440 });
+    defer h.stop();
+    var map: Map = .{ .window = null, .io = std.testing.io };
+    defer map.deinit(std.heap.smp_allocator);
+    var state: App = .{ .io = std.testing.io, .home_path = root, .map = &map };
+    defer state.deinit();
+    state.events = h.app.events(App.Events);
+    try h.app.bind("App", App, &state);
+    // A scan done before: its largest entries are listed.
+    _ = try state.scan(h.arena.allocator(), root);
+    try h.open();
+
+    try h.waitFor(".popover");
+    try std.testing.expect((try h.text(".popover-figure .figure-value")).len > 0);
+    try std.testing.expect(std.mem.startsWith(u8, try h.text(".figure-caption"), "headroom on "));
+    try h.expectText(".popover-entry:first-child .popover-name", "games");
+    try std.testing.expectEqual(@as(u32, 3), try h.evaluate(u32, "document.querySelectorAll('.popover-entry').length"));
+    try shot(h, "popover");
+}
+
 test "scanning a folder, opening one of its folders, going back" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();

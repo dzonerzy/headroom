@@ -739,6 +739,143 @@
   }
 }
 
+@layer components {
+  /* The tray's popover: a transparent window, the panel inside with room
+     for its shadow. */
+  .tray-body,
+  .tray-body #root {
+    height: 100%;
+    overflow: hidden;
+  }
+
+  .popover {
+    display: grid;
+    /* minmax(0, …): a long path does not widen the panel. */
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto 1fr auto;
+    gap: 1rem;
+    height: calc(100% - 16px);
+    margin: 8px;
+    border: 1px solid #2a394a;
+    border-radius: 14px;
+    background: linear-gradient(180deg, #152230, var(--plate) 45%);
+    padding: 1rem 1.1rem 1.1rem;
+    box-shadow: 0 10px 28px rgb(0 0 0 / 0.5);
+  }
+
+  .popover[data-low] {
+    border-color: color-mix(in oklab, var(--clip) 50%, #2a394a);
+  }
+
+  .popover-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .popover-brand {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 720;
+    font-stretch: 118%;
+  }
+
+  .popover-watch {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: var(--quiet);
+    font-size: 0.82rem;
+  }
+
+  .popover-figure .figure-value {
+    font-size: 2.7rem;
+    font-weight: 800;
+  }
+
+  .popover[data-low] .popover-figure .figure-value {
+    color: var(--clip);
+  }
+
+  .popover-segments {
+    gap: 2px;
+    height: 0.95rem;
+    margin-top: 0.7rem;
+  }
+
+  .popover-alarm {
+    margin-top: 0.6rem;
+    color: var(--quiet);
+    font-size: 0.84rem;
+  }
+
+  .popover[data-low] .popover-alarm {
+    color: var(--clip);
+  }
+
+  .popover-top {
+    min-height: 0;
+    border-top: 1px solid var(--rule);
+    padding-top: 0.8rem;
+  }
+
+  .popover-label {
+    overflow: hidden;
+    color: var(--quiet);
+    font-size: 0.82rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .popover-list {
+    display: grid;
+    gap: 0.45rem;
+    margin-top: 0.55rem;
+  }
+
+  .popover-entry {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.15rem 0.6rem;
+    font-size: 0.9rem;
+  }
+
+  .popover-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .popover-size {
+    color: var(--quiet);
+  }
+
+  .popover-bar {
+    grid-column: 1 / -1;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--level);
+    box-shadow: 0 0 6px color-mix(in oklab, var(--level) 45%, transparent);
+  }
+
+  .popover-empty {
+    color: var(--quiet);
+    font-size: 0.9rem;
+  }
+
+  .popover-actions {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .popover-actions .control {
+    flex: 1;
+    padding-inline: 0.5rem;
+    white-space: nowrap;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .segment,
   .labels {

@@ -124,6 +124,9 @@ pub const App = struct {
     settings_path: ?[]const u8 = null,
     /// Watching free space: the tray icon, there while it is on.
     tray: ?*plume.Tray = null,
+    /// The tray's popover (tray.html), shown by the icon on a click; made
+    /// once, hidden when not shown.
+    popover: ?*plume.Window = null,
     /// Told already that the disk is nearly full (until it has room again).
     alarmed: bool = false,
 
@@ -444,18 +447,91 @@ pub const App = struct {
         }
     }
 
-    /// main.zig: the tray, when watching was on last time.
+    /// main.zig: the tray, when watching was on last time. A click on its
+    /// icon shows the popover (tray.html), a right click the menu.
     pub fn startWatching(self: *App) !void {
         const app = self.plume_app orelse return error.Unsupported;
-        self.tray = try app.createTray(.{ .tooltip = "Headroom", .menu = &trayMenu("Headroom", app.startsAtLogin()) });
+        const tray = try app.createTray(.{ .tooltip = "Headroom", .menu = &trayMenu("Headroom", app.startsAtLogin()) });
+        errdefer app.destroyTray(tray);
+        if (self.popover == null) {
+            const popover = try app.openWindow(.{
+                .title = "Headroom",
+                .url = "tray.html",
+                .width = 340,
+                .height = 440,
+                .frameless = true,
+                .transparent = true,
+                .resizable = false,
+                .hidden = true,
+            });
+            // Closing it (Alt+F4) hides it: it is made once.
+            const Keep = struct {
+                fn close(s: *App) bool {
+                    if (s.popover) |p| p.hide() catch {};
+                    return false;
+                }
+            };
+            popover.onClose(self, Keep.close);
+            self.popover = popover;
+        }
+        tray.attachWindow(self.popover);
+        self.tray = tray;
         self.watchTick();
     }
 
     fn stopWatching(self: *App) void {
         const app = self.plume_app orelse return;
+        if (self.popover) |popover| popover.hide() catch {};
         if (self.tray) |tray| app.destroyTray(tray);
         self.tray = null;
         self.alarmed = false;
+    }
+
+    pub const Top = struct { name: []const u8, size: u64, folder: bool };
+
+    /// The biggest entries of the folder scanned, biggest first (the
+    /// popover's list); empty before a scan.
+    pub fn largest(self: *App, allocator: std.mem.Allocator, count: u32) error{OutOfMemory}![]const Top {
+        self.lock.lockUncancelable(self.io);
+        defer self.lock.unlock(self.io);
+        const tree = &(self.tree orelse return &.{});
+        var out: std.ArrayList(Top) = .empty;
+        for (tree.children(0), 0..) |child, i| {
+            if (child.size == 0) continue;
+            const index = tree.node(0).first_child + @as(u32, @intCast(i));
+            try out.append(allocator, .{ .name = try allocator.dupe(u8, tree.name(index)), .size = child.size, .folder = child.kind == .directory });
+        }
+        std.mem.sort(Top, out.items, {}, struct {
+            fn bigger(_: void, l: Top, r: Top) bool {
+                return l.size > r.size;
+            }
+        }.bigger);
+        return out.items[0..@min(out.items.len, count)];
+    }
+
+    /// The folder last scanned, null before a scan.
+    pub fn scannedPath(self: *App, allocator: std.mem.Allocator) error{OutOfMemory}!?[]const u8 {
+        self.lock.lockUncancelable(self.io);
+        defer self.lock.unlock(self.io);
+        const tree = self.tree orelse return null;
+        return try allocator.dupe(u8, tree.root);
+    }
+
+    /// The main window, shown and focused (the popover hides).
+    pub fn openMain(self: *App) void {
+        if (self.popover) |popover| popover.hide() catch {};
+        self.menuChosen("open");
+    }
+
+    /// From the popover: the main window scans `path`.
+    pub fn requestScan(self: *App, path: []const u8) void {
+        self.openMain();
+        if (self.events) |events| events.emit(.request_scan, path);
+    }
+
+    /// The popover hides (Escape in it).
+    pub fn hidePopover(self: *App) void {
+        if (self.popover) |popover| popover.hide() catch {};
     }
 
     /// main.zig: an item of the tray's menu.

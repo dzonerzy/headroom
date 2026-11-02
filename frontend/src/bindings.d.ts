@@ -86,6 +86,12 @@ interface Removed {
   files: number;
 }
 
+interface Top {
+  name: string;
+  size: number;
+  folder: boolean;
+}
+
 interface Progress {
   files: number;
   folders: number;
@@ -109,6 +115,11 @@ interface AppErrors {
   watching: never;
   setWatching: "Unsupported";
   watchTick: never;
+  largest: "OutOfMemory";
+  scannedPath: "OutOfMemory";
+  openMain: never;
+  requestScan: never;
+  hidePopover: never;
 }
 
 interface AppBindings {
@@ -134,6 +145,13 @@ interface AppBindings {
   /** Fails with PlumeError<AppErrors["setWatching"]>. */
   setWatching(arg1: boolean): void;
   watchTick(): void;
+  /** Fails with PlumeError<AppErrors["largest"]>. */
+  largest(arg1: number): Top[];
+  /** Fails with PlumeError<AppErrors["scannedPath"]>. */
+  scannedPath(): string | null;
+  openMain(): void;
+  requestScan(arg1: string): void;
+  hidePopover(): void;
 }
 
 // The page runtime: the window, dialogs, clipboard, screens and menus.
