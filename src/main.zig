@@ -24,4 +24,7 @@ pub fn main(init: std.process.Init) !void {
     try app.bind("App", App, &state);
 
     app.run();
+    // The window is closed: a scan still running stops now (app.deinit
+    // waits for it, and a whole disk takes minutes).
+    state.cancelScan();
 }
