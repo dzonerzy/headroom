@@ -1,0 +1,12 @@
+{
+  "name": "headroom",
+  "private": true,
+  "workspaces": [
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "plume dev",
+    "build": "plume build",
+    "build:compressed": "plume build --compress"
+  }
+}

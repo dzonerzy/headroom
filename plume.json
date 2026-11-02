@@ -1,0 +1,21 @@
+{
+  "name": "headroom",
+  "title": "Headroom",
+  "app_id": "com.dzonerzy.headroom",
+  "version": "0.1.0",
+  "window": {
+    "width": 1024,
+    "height": 768,
+    "resizable": true,
+    "frameless": false,
+    "transparent": false
+  },
+  "color_scheme": "system",
+  "single_instance": false,
+  "profile": "minimal",
+  "compress": false,
+  "frontend": {
+    "dir": "frontend",
+    "dev_url": "http://localhost:5173"
+  }
+}

@@ -1,0 +1,13 @@
+.{
+    .name = .headroom,
+    .version = "0.1.0",
+    .fingerprint = 0x436384d03dc7c5a5, // Changing this has security and trust implications.
+    .minimum_zig_version = "0.17.0",
+    .dependencies = .{
+        .plume = .{
+            .url = "git+https://github.com/dzonerzy/plume#f5808ca1b0186b16c2bf343777c4528d1077bcbc",
+            .hash = "plume-0.2.0-n-MsrfQcBwAlvWo9v4mbzZFypOlmwjykzMTUOsXQRE95",
+        },
+    },
+    .paths = .{ "build.zig", "build.zig.zon", "src", "plume.json" },
+}

@@ -1,0 +1,257 @@
+@import "tailwindcss";
+/* Recursive, every axis: linear for the interface, casual for Zig's answers,
+   mono for code. Bundled by Vite: the app needs no network for its fonts. */
+@import "@fontsource-variable/recursive/full.css";
+
+/* A blue jay's feather: cobalt over cool white, or under a night sky. */
+:root {
+  color-scheme: light dark;
+  --down: #f2f5fa;
+  --ink: #1a2233;
+  --jay: #2b59d9;
+  --sky: #dce6fb;
+  --quill: #667089;
+  --rule: #d5dce8;
+  --on-jay: #ffffff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --down: #0e1526;
+    --ink: #e6ebf5;
+    --jay: #86a8ff;
+    --sky: #1c2a4a;
+    --quill: #8e98ae;
+    --rule: #24304b;
+    --on-jay: #0e1526;
+  }
+}
+
+@theme {
+  --font-sans: "Recursive Variable", ui-sans-serif, system-ui, sans-serif;
+  /* The same family: its MONO axis makes it monospaced (see code below). */
+  --font-mono: "Recursive Variable", ui-monospace, monospace;
+}
+
+@theme inline {
+  --color-down: var(--down);
+  --color-ink: var(--ink);
+  --color-jay: var(--jay);
+  --color-sky: var(--sky);
+  --color-quill: var(--quill);
+  --color-rule: var(--rule);
+}
+
+@layer base {
+  html {
+    background: var(--down);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 15px;
+    line-height: 1.55;
+    font-variation-settings: "CASL" 0, "MONO" 0;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  code,
+  .code {
+    font-family: var(--font-mono);
+    font-variation-settings: "MONO" 1, "CASL" 0;
+    font-size: 0.92em;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--jay);
+    outline-offset: 3px;
+  }
+}
+
+@layer components {
+  .shell {
+    display: grid;
+    grid-template-rows: auto 1fr auto auto;
+    gap: clamp(1.25rem, 3.5vh, 2.5rem);
+    /* Less the menu bar Plume draws on Linux, if there is one. */
+    min-height: calc(100vh - var(--plume-menu-height, 0px));
+    max-width: 52rem;
+    padding: clamp(1.5rem, 5vh, 3.5rem) clamp(1.5rem, 8vw, 6.5rem);
+  }
+
+  .masthead {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+  }
+
+  .mark {
+    flex: none;
+    width: 2.25rem;
+    height: 2.25rem;
+    background: var(--jay);
+    mask: url("./feather.svg") center / contain no-repeat;
+  }
+
+  .title {
+    font-size: 1.35rem;
+    font-weight: 720;
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+  }
+
+  .lede {
+    color: var(--quill);
+  }
+
+  /* The greeting: the form, then Zig's answer as the page's one large voice. */
+  .greet {
+    align-self: start;
+    display: grid;
+    gap: 1.25rem;
+    padding-top: clamp(0rem, 3vh, 1.5rem);
+  }
+
+  .ask {
+    display: flex;
+    max-width: 28rem;
+    border: 1px solid var(--rule);
+    border-radius: 0.85rem;
+    background: color-mix(in oklab, var(--down) 70%, var(--sky));
+    padding: 0.3rem;
+  }
+
+  .ask:focus-within {
+    border-color: var(--jay);
+  }
+
+  .field {
+    flex: 1;
+    min-width: 0;
+    background: transparent;
+    padding: 0.55rem 0.75rem;
+    outline: none;
+  }
+
+  .field::placeholder {
+    color: var(--quill);
+  }
+
+  .action {
+    border-radius: 0.6rem;
+    background: var(--jay);
+    color: var(--on-jay);
+    padding: 0.55rem 1.1rem;
+    font-weight: 620;
+    cursor: pointer;
+  }
+
+  .action:hover {
+    background: color-mix(in oklab, var(--jay) 88%, var(--ink));
+  }
+
+  .action:disabled {
+    cursor: default;
+    opacity: 0.55;
+  }
+
+  .action-quiet {
+    border: 1px solid var(--rule);
+    background: transparent;
+    color: var(--ink);
+  }
+
+  .action-quiet:hover {
+    background: var(--sky);
+  }
+
+  .answer {
+    font-size: clamp(2.75rem, 7vw, 5.25rem);
+    font-weight: 680;
+    line-height: 1;
+    letter-spacing: -0.02em;
+    font-variation-settings: "CASL" 1, "MONO" 0, "slnt" -7;
+    color: var(--jay);
+    overflow-wrap: anywhere;
+    /* Two lines kept: an answer of one does not move what follows. */
+    min-height: 2lh;
+  }
+
+  .answer[data-empty] {
+    color: var(--quill);
+    font-weight: 520;
+  }
+
+  /* Zig's answer arrives as if written: one stroke, left to right. */
+  .answer[data-written] {
+    animation: write 0.45s cubic-bezier(0.3, 0.7, 0.3, 1) both;
+  }
+
+  .trace {
+    min-height: 1.55em;
+    color: var(--quill);
+  }
+
+  /* The worker thread: progress drawn as a feather's barbs. */
+  .work {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 0.9rem 1.5rem;
+    border-top: 1px solid var(--rule);
+    padding-top: 1.4rem;
+  }
+
+  .work h2 {
+    font-weight: 650;
+  }
+
+  .work .trace {
+    grid-column: 1 / -1;
+  }
+
+  .barbs {
+    grid-column: 1 / -1;
+    display: flex;
+    gap: 0.4rem;
+    padding-left: 0.35rem;
+  }
+
+  .barb {
+    width: 0.4rem;
+    height: 1.75rem;
+    border-radius: 1px;
+    background: var(--rule);
+    transform: skewX(-24deg);
+    transition: background-color 0.18s;
+  }
+
+  .barb[data-on] {
+    background: var(--jay);
+  }
+
+  .files {
+    color: var(--quill);
+  }
+
+  .files code {
+    color: var(--ink);
+  }
+}
+
+@keyframes write {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .answer[data-written] {
+    animation: none;
+  }
+
+  .barb {
+    transition: none;
+  }
+}

@@ -1,0 +1,14 @@
+# Zig
+.zig-cache/
+zig-out/
+zig-pkg/
+
+# The frontend's dependencies and build
+node_modules/
+frontend/dist/
+
+# plume build's output
+build/
+
+# The secret key of signed updates (plume update keygen): never committed
+update.key
