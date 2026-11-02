@@ -14,4 +14,18 @@ pub fn build(b: *std.Build) void {
     run.step.dependOn(b.getInstallStep());
     b.step("run", "Run the application").dependOn(&run.step);
     b.step("bindings", "Write frontend/src/bindings.ts").dependOn(app.bindings);
+
+    // The scanner alone: its unit tests, and a run on a real folder.
+    const scan = b.createModule(.{ .root_source_file = b.path("src/scan.zig"), .target = target, .optimize = optimize });
+    const scan_tests = b.addTest(.{ .root_module = scan });
+    b.step("test-scan", "Run the scanner's unit tests").dependOn(&b.addRunArtifact(scan_tests).step);
+    const scan_tool = b.addExecutable(.{ .name = "scan", .root_module = b.createModule(.{
+        .root_source_file = b.path("tools/scan.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{.{ .name = "scan", .module = scan }},
+    }) });
+    const scan_run = b.addRunArtifact(scan_tool);
+    scan_run.addPassthruArgs();
+    b.step("scan", "Scan a folder: zig build scan -- <folder> [threads]").dependOn(&scan_run.step);
 }
