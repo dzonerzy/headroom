@@ -27,6 +27,35 @@ export default function Root() {
   const [elevating, setElevating] = useState(false);
   const [confirm, setConfirm] = useState<{ removal: Removal; mode: Mode; busy: boolean; error: string | null } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [watching, setWatchingShown] = useState(() => App.watching());
+
+  // Watching free space: the tray's own requests, and its reading once a minute.
+  useEffect(() => {
+    const offScan = Events.on("request_scan", (path) => void scan(path));
+    const offWatching = Events.on("watching", (on) => setWatchingShown(on));
+    const timer = window.setInterval(() => App.watchTick(), 60_000);
+    return () => {
+      offScan();
+      offWatching();
+      window.clearInterval(timer);
+    };
+    // scan only uses setters and refs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function toggleWatching() {
+    try {
+      App.setWatching(!watching);
+      setWatchingShown(!watching);
+      setNotice(
+        watching
+          ? "Headroom stopped watching free space."
+          : "Headroom watches free space from the tray now, and tells you when the disk is 90% full. Closing the window keeps it there.",
+      );
+    } catch {
+      setNotice("This desktop has no tray: Headroom cannot watch free space from there.");
+    }
+  }
 
   // A notice stays a few seconds.
   useEffect(() => {
@@ -300,6 +329,15 @@ export default function Root() {
             )}
           </nav>
           <div className="deck-actions">
+            <button
+              className="control control-quiet control-watch"
+              aria-pressed={watching}
+              onClick={toggleWatching}
+              title="Watch free space from the tray, and get told when the disk is 90% full"
+            >
+              <span className="led" data-on={watching ? "" : undefined} aria-hidden="true" />
+              Watch free space
+            </button>
             {phase.name === "ready" && (
               <button className="control" onClick={() => scan(phase.scanned.path)}>
                 Scan again

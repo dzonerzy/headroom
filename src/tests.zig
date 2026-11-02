@@ -15,6 +15,7 @@ test {
     _ = @import("volume.zig");
     _ = @import("elevate.zig");
     _ = @import("remove.zig");
+    _ = @import("app.zig");
 }
 
 fn write(dir: std.Io.Dir, path: []const u8, bytes: usize) !void {
@@ -61,6 +62,12 @@ test "scanning a folder, opening one of its folders, going back" {
     state.events = h.app.events(App.Events);
     try h.app.bind("App", App, &state);
     try h.open();
+
+    // Watching free space needs a tray: headless there is none, and the
+    // page says so.
+    try h.click(".control-watch");
+    try h.waitUntil("document.querySelector('.notice')?.textContent.startsWith('This desktop has no tray') === true");
+    try std.testing.expect(!state.watching());
 
     // The start: one button scans the home folder.
     try h.expectText(".stage-title", "See what fills your disk");

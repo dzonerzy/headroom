@@ -14,9 +14,15 @@ const removing = @import("remove.zig");
 
 pub const App = struct {
     pub const async_methods = .{ "scan", "remove" };
+    /// main.zig's, not the page's.
+    pub const hidden = .{ "startWatching", "menuChosen", "closing" };
 
     pub const Events = struct {
         progress: Progress,
+        /// The tray asks the page to scan a folder.
+        request_scan: []const u8,
+        /// Watching free space was turned on or off (from the tray).
+        watching: bool,
     };
 
     pub const Progress = struct { files: u64, folders: u64, bytes: u64, unreadable: u64 };
@@ -111,6 +117,18 @@ pub const App = struct {
     scanning: std.atomic.Value(bool) = .init(false),
     /// Counts scans: what a removal was asked about must still be there.
     generation: u32 = 0,
+
+    /// Set by main.zig: the tray, notifications and the window are its.
+    plume_app: ?*plume.App = null,
+    /// Where "watch free space" is remembered (null: not remembered).
+    settings_path: ?[]const u8 = null,
+    /// Watching free space: the tray icon, there while it is on.
+    tray: ?*plume.Tray = null,
+    /// Told already that the disk is nearly full (until it has room again).
+    alarmed: bool = false,
+
+    /// Below this share of the disk free, the alarm: the meter's red zone.
+    pub const alarm_below = 0.10;
 
     const gpa = std.heap.smp_allocator;
 
@@ -383,6 +401,111 @@ pub const App = struct {
         return removed;
     }
 
+    // ---- Watching free space: the tray and the alarm ----
+
+    /// Whether Headroom watches free space from the tray.
+    pub fn watching(self: *App) bool {
+        return self.tray != null;
+    }
+
+    /// Watching free space on or off (remembered): the tray icon comes or
+    /// goes; while on, closing the window keeps Headroom in the tray.
+    pub fn setWatching(self: *App, on: bool) error{Unsupported}!void {
+        if (on == (self.tray != null)) return;
+        if (on) self.startWatching() catch return error.Unsupported else self.stopWatching();
+        self.saveSettings();
+    }
+
+    /// The disk's headroom on the tray, and the alarm once it is nearly
+    /// full. The page calls it every minute, the tray once a minute too.
+    pub fn watchTick(self: *App) void {
+        const tray = self.tray orelse return;
+        const app = self.plume_app orelse return;
+        const s = volume.space(gpa, self.home_path) orelse return;
+        if (s.total == 0) return;
+        const free_share = @as(f64, @floatFromInt(s.free)) / @as(f64, @floatFromInt(s.total));
+        var free_text: [32]u8 = undefined;
+        var level: [96]u8 = undefined;
+        const label = std.fmt.bufPrint(&level, "{s} free on {s} ({d:.0}%)", .{ human(&free_text, s.free), driveOf(self.home_path), free_share * 100 }) catch return;
+        var tip: [128]u8 = undefined;
+        tray.setTooltip(std.fmt.bufPrint(&tip, "Headroom: {s}", .{label}) catch label) catch {};
+        tray.setMenu(&trayMenu(label, app.startsAtLogin())) catch {};
+
+        if (free_share < alarm_below and !self.alarmed) {
+            self.alarmed = true;
+            var body: [192]u8 = undefined;
+            app.notify(.{
+                .title = "Your disk is almost full",
+                .body = std.fmt.bufPrint(&body, "{s} has {s} of headroom left ({d:.0}%). Open Headroom to see what fills it.", .{ driveOf(self.home_path), human(&free_text, s.free), free_share * 100 }) catch null,
+                .tag = "headroom-low",
+            }) catch {};
+        } else if (free_share > alarm_below + 0.01) {
+            self.alarmed = false;
+        }
+    }
+
+    /// main.zig: the tray, when watching was on last time.
+    pub fn startWatching(self: *App) !void {
+        const app = self.plume_app orelse return error.Unsupported;
+        self.tray = try app.createTray(.{ .tooltip = "Headroom", .menu = &trayMenu("Headroom", app.startsAtLogin()) });
+        self.watchTick();
+    }
+
+    fn stopWatching(self: *App) void {
+        const app = self.plume_app orelse return;
+        if (self.tray) |tray| app.destroyTray(tray);
+        self.tray = null;
+        self.alarmed = false;
+    }
+
+    /// main.zig: an item of the tray's menu.
+    pub fn menuChosen(self: *App, id: []const u8) void {
+        const app = self.plume_app orelse return;
+        const eql = std.mem.eql;
+        if (eql(u8, id, "open")) {
+            app.window().show() catch {};
+            app.window().focus() catch {};
+        } else if (eql(u8, id, "scan-home") or eql(u8, id, "scan-disk")) {
+            app.window().show() catch {};
+            app.window().focus() catch {};
+            const path = if (eql(u8, id, "scan-home")) self.home_path else driveOf(self.home_path);
+            if (self.events) |events| events.emit(.request_scan, path);
+        } else if (eql(u8, id, "login")) {
+            app.setStartAtLogin(!app.startsAtLogin()) catch {};
+            self.watchTick();
+        } else if (eql(u8, id, "stop")) {
+            self.stopWatching();
+            self.saveSettings();
+            if (self.events) |events| events.emit(.watching, false);
+        } else if (eql(u8, id, "quit")) {
+            app.quit();
+        }
+    }
+
+    /// main.zig: the window asked to close. While watching it hides
+    /// instead: Headroom stays in the tray.
+    pub fn closing(self: *App) bool {
+        const app = self.plume_app orelse return true;
+        if (self.tray == null) return true;
+        app.window().hide() catch return true;
+        return false;
+    }
+
+    fn saveSettings(self: *App) void {
+        const path = self.settings_path orelse return;
+        const cwd = std.Io.Dir.cwd();
+        if (std.fs.path.dirname(path)) |folder| cwd.createDirPath(self.io, folder) catch return;
+        const text = if (self.tray != null) "{\"watch\":true}\n" else "{\"watch\":false}\n";
+        cwd.writeFile(self.io, .{ .sub_path = path, .data = text }) catch {};
+    }
+
+    /// main.zig: whether watching was on last time.
+    pub fn savedWatching(io: std.Io, path: []const u8) bool {
+        var buffer: [256]u8 = undefined;
+        const text = std.Io.Dir.cwd().readFile(io, path, &buffer) catch return false;
+        return std.mem.indexOf(u8, text, "\"watch\":true") != null;
+    }
+
     /// The categories under `node`, biggest first (cached for the last one).
     fn legend(self: *App, allocator: std.mem.Allocator, tree: *const scanner.Tree, node: u32) ![]const Legend {
         if (self.legend_root != node) {
@@ -418,6 +541,40 @@ pub const App = struct {
     }
 };
 
+/// The tray's menu: the headroom (a line to read, not choose), then what
+/// can be done from there.
+fn trayMenu(level: []const u8, login: bool) [9]plume.menu.Item {
+    const menu = plume.menu;
+    return .{
+        .{ .action = .{ .id = "level", .label = level, .enabled = false } },
+        menu.separator,
+        menu.item("open", "Open Headroom", null),
+        menu.item("scan-home", "Scan your home folder", null),
+        menu.item("scan-disk", "Scan the whole disk", null),
+        menu.separator,
+        menu.checkbox("login", "Start at login", login),
+        menu.item("stop", "Stop watching free space", null),
+        menu.item("quit", "Quit Headroom", null),
+    };
+}
+
+/// "C:\" for "C:\Users\ada", "/" on Linux.
+fn driveOf(path: []const u8) []const u8 {
+    if (path.len >= 3 and path[1] == ':') return path[0..3];
+    return "/";
+}
+
+/// Bytes for people, as the page writes them: "284 GB", "9.5 GB".
+fn human(buffer: []u8, n: u64) []const u8 {
+    const units = [_][]const u8{ "bytes", "KB", "MB", "GB", "TB", "PB" };
+    var value: f64 = @floatFromInt(n);
+    var unit: usize = 0;
+    while (value >= 1024 and unit < units.len - 1) : (unit += 1) value /= 1024;
+    if (unit == 0) return std.fmt.bufPrint(buffer, "{d} bytes", .{n}) catch "";
+    if (value < 100) return std.fmt.bufPrint(buffer, "{d:.1} {s}", .{ value, units[unit] }) catch "";
+    return std.fmt.bufPrint(buffer, "{d:.0} {s}", .{ value, units[unit] }) catch "";
+}
+
 /// Whether `above` is `node` or holds it.
 fn isAbove(tree: *const scanner.Tree, above: u32, node: u32) bool {
     var at = node;
@@ -429,4 +586,13 @@ fn isAbove(tree: *const scanner.Tree, above: u32, node: u32) bool {
 
 fn hex(allocator: std.mem.Allocator, color: u24) ![]const u8 {
     return std.fmt.allocPrint(allocator, "#{x:0>6}", .{color});
+}
+
+test "the tray's words" {
+    var buffer: [32]u8 = undefined;
+    try std.testing.expectEqualStrings("12 bytes", human(&buffer, 12));
+    try std.testing.expectEqualStrings("9.5 GB", human(&buffer, 9.5 * 1024 * 1024 * 1024));
+    try std.testing.expectEqualStrings("284 GB", human(&buffer, 284 * 1024 * 1024 * 1024));
+    try std.testing.expectEqualStrings("C:\\", driveOf("C:\\Users\\ada"));
+    try std.testing.expectEqualStrings("/", driveOf("/home/ada"));
 }

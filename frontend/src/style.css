@@ -158,6 +158,30 @@
     opacity: 0.5;
   }
 
+  .control-watch {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+  }
+
+  .control-watch[aria-pressed="true"] {
+    color: var(--ink);
+  }
+
+  /* A meter's LED: unlit, or lit green while watching. */
+  .led {
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    background: var(--unlit);
+    box-shadow: inset 0 0 0 1px #2a394a;
+  }
+
+  .led[data-on] {
+    background: var(--level);
+    box-shadow: 0 0 7px color-mix(in oklab, var(--level) 70%, transparent);
+  }
+
   .control-main {
     border-color: transparent;
     background: var(--ink);

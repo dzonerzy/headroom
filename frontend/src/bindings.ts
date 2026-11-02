@@ -116,6 +116,9 @@ export interface AppErrors {
   hover: "OutOfMemory";
   removal: "OutOfMemory" | "NoScan" | "NotFound";
   remove: "AccessDenied" | "OutOfMemory" | "NoScan" | "NotFound" | "InUse" | "TrashUnavailable" | "Failed" | "Refused" | "Stale";
+  watching: never;
+  setWatching: "Unsupported";
+  watchTick: never;
 }
 
 export interface AppBindings {
@@ -137,6 +140,10 @@ export interface AppBindings {
   removal(arg1: number): Removal;
   /** Fails with PlumeError<AppErrors["remove"]>. */
   remove(arg1: number, arg2: number, arg3: Mode): Promise<Removed>;
+  watching(): boolean;
+  /** Fails with PlumeError<AppErrors["setWatching"]>. */
+  setWatching(arg1: boolean): void;
+  watchTick(): void;
 }
 
 // The page runtime: the window, dialogs, clipboard, screens and menus.
@@ -258,6 +265,8 @@ export interface PlumeDesktop {
 /** The events of App (its Events): names and data. */
 export interface AppEvents {
   "progress": Progress;
+  "request_scan": string;
+  "watching": boolean;
 }
 
 
@@ -319,5 +328,14 @@ export const App: AppBindings = {
   },
   remove(arg1, arg2, arg3) {
     return native.remove(arg1, arg2, arg3).catch((error: unknown) => { throw plumeError(error); });
+  },
+  watching() {
+    try { return native.watching(); } catch (error) { throw plumeError(error); }
+  },
+  setWatching(arg1) {
+    try { return native.setWatching(arg1); } catch (error) { throw plumeError(error); }
+  },
+  watchTick() {
+    try { return native.watchTick(); } catch (error) { throw plumeError(error); }
   },
 };

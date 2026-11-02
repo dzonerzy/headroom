@@ -106,6 +106,9 @@ interface AppErrors {
   hover: "OutOfMemory";
   removal: "OutOfMemory" | "NoScan" | "NotFound";
   remove: "AccessDenied" | "OutOfMemory" | "NoScan" | "NotFound" | "InUse" | "TrashUnavailable" | "Failed" | "Refused" | "Stale";
+  watching: never;
+  setWatching: "Unsupported";
+  watchTick: never;
 }
 
 interface AppBindings {
@@ -127,6 +130,10 @@ interface AppBindings {
   removal(arg1: number): Removal;
   /** Fails with PlumeError<AppErrors["remove"]>. */
   remove(arg1: number, arg2: number, arg3: Mode): Promise<Removed>;
+  watching(): boolean;
+  /** Fails with PlumeError<AppErrors["setWatching"]>. */
+  setWatching(arg1: boolean): void;
+  watchTick(): void;
 }
 
 // The page runtime: the window, dialogs, clipboard, screens and menus.
@@ -248,6 +255,8 @@ interface PlumeDesktop {
 /** The events of App (its Events): names and data. */
 interface AppEvents {
   "progress": Progress;
+  "request_scan": string;
+  "watching": boolean;
 }
 
 /** The page runtime: events to and from Zig, and the desktop. */
