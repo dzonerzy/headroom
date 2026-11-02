@@ -4,7 +4,8 @@ import { App, Events, Plume, PlumeError, type Item, type Label, type Progress, t
 import { bytes, compact, exact, plural, seconds, share } from "./format";
 import { Mark, Meter } from "./Meter";
 import { bin, ConfirmRemove, type Mode } from "./Remove";
-import type { Removal } from "./bindings";
+import { ConfirmGroup, ReclaimPanel } from "./Reclaim";
+import type { Group, Place, Reclaim, Removal } from "./bindings";
 
 type Phase =
   | { name: "start" }
@@ -28,6 +29,56 @@ export default function Root() {
   const [confirm, setConfirm] = useState<{ removal: Removal; mode: Mode; busy: boolean; error: string | null } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [watching, setWatchingShown] = useState(() => App.watching());
+  const [reclaim, setReclaim] = useState<Reclaim | null>(null);
+  const [panel, setPanel] = useState(false);
+  const [groupConfirm, setGroupConfirm] = useState<{ group: Group; busy: boolean; error: string | null } | null>(null);
+
+  function openPanel(open: boolean) {
+    setPanel(open);
+    App.showReclaimable(open);
+  }
+
+  /** The map, the list of what can go and the disk's space, after a change. */
+  function refreshAfterChange() {
+    if (shown.current !== null) show(shown.current);
+    setReclaim(App.reclaimable());
+    if (phase.name === "ready") setSpace(App.space(phase.scanned.path));
+  }
+
+  function goTo(place: Place) {
+    show(place.parent);
+    App.highlight(place.node);
+  }
+
+  async function cleanGroup(mode: Mode) {
+    if (!groupConfirm || !reclaim) return;
+    const { group } = groupConfirm;
+    setGroupConfirm({ ...groupConfirm, busy: true, error: null });
+    try {
+      if (group.action === "empty_bin") {
+        const freed = await App.emptyBin(group.nodes[0], reclaim.generation);
+        setNotice(`Emptied the ${bin}: ${bytes(freed.size)} freed.`);
+      } else {
+        const done = await App.removeMany(group.nodes, reclaim.generation, mode);
+        const what = `${exact(done.count)} ${plural(done.count, "place", "places")}`;
+        const failed = done.failed > 0 ? ` ${exact(done.failed)} could not go (${done.reason ?? "failed"}).` : "";
+        setNotice(
+          mode === "trash"
+            ? `Moved ${what} to the ${bin} (${bytes(done.size)}).${failed}`
+            : `Deleted ${what}: ${bytes(done.size)} freed.${failed}`,
+        );
+      }
+      setGroupConfirm(null);
+      refreshAfterChange();
+    } catch (error) {
+      const code = error instanceof PlumeError ? String(error.code) : "Failed";
+      setGroupConfirm({
+        group,
+        busy: false,
+        error: code === "Stale" ? "The folder was scanned again since. Try again on the new list." : `It could not be done (${code}).`,
+      });
+    }
+  }
 
   // Watching free space: the tray's own requests, and its reading once a minute.
   useEffect(() => {
@@ -81,8 +132,7 @@ export default function Root() {
     try {
       const removed = await App.remove(removal.node, removal.generation, mode);
       setConfirm(null);
-      if (shown.current !== null) show(shown.current);
-      if (phase.name === "ready") setSpace(App.space(phase.scanned.path));
+      refreshAfterChange();
       setNotice(
         mode === "trash"
           ? `Moved ${removal.name} to the ${bin} (${bytes(removed.size)}). Empty the ${bin} to get the space back.`
@@ -194,10 +244,18 @@ export default function Root() {
       App.intro(area.left, area.top, area.width, area.height, window.devicePixelRatio || 1);
   }, []);
 
-  // Once a scan is done, its folder on the map; until then, the intro.
+  // Once a scan is done, its folder on the map and what can go; until then,
+  // the intro.
   useLayoutEffect(() => {
-    if (phase.name === "ready") show(0);
-    else intro();
+    if (phase.name === "ready") {
+      show(0);
+      setReclaim(App.reclaimable());
+    } else {
+      intro();
+      setReclaim(null);
+      setPanel(false);
+      App.showReclaimable(false);
+    }
   }, [phase, show, intro]);
 
   // The map follows the window's size.
@@ -329,6 +387,12 @@ export default function Root() {
             )}
           </nav>
           <div className="deck-actions">
+            {reclaim && reclaim.size > 0 && (
+              <button className="control control-reclaim" aria-pressed={panel} onClick={() => openPanel(!panel)}>
+                <span className="led" data-on="" aria-hidden="true" />
+                {bytes(reclaim.size)} can go
+              </button>
+            )}
             <button
               className="control control-quiet control-watch"
               aria-pressed={watching}
@@ -356,6 +420,7 @@ export default function Root() {
         />
       </header>
 
+      <div className="workspace">
       <section
         ref={map}
         className="map"
@@ -431,6 +496,31 @@ export default function Root() {
         )}
       </section>
 
+      {panel && reclaim && (
+        <ReclaimPanel
+          reclaim={reclaim}
+          busy={groupConfirm?.busy ? groupConfirm.group.id : null}
+          onClean={(group) => setGroupConfirm({ group, busy: false, error: null })}
+          onCopy={(command) => {
+            Plume.clipboard.writeText(command);
+            setNotice(`Copied: ${command}. Run it in a terminal, then scan again.`);
+          }}
+          onGo={goTo}
+          onHover={(place) => (place ? App.highlight(place.node) : App.hover(-1, 0))}
+          onClose={() => openPanel(false)}
+        />
+      )}
+      </div>
+
+      {groupConfirm && (
+        <ConfirmGroup
+          group={groupConfirm.group}
+          busy={groupConfirm.busy}
+          error={groupConfirm.error}
+          onConfirm={cleanGroup}
+          onCancel={() => setGroupConfirm(null)}
+        />
+      )}
       {confirm && (
         <ConfirmRemove
           removal={confirm.removal}

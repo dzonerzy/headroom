@@ -50,7 +50,7 @@
 @layer components {
   .console {
     display: grid;
-    grid-template-rows: auto 1fr auto;
+    grid-template-rows: auto minmax(0, 1fr) auto;
     /* Less the menu bar Plume draws on Linux, if there is one. */
     height: calc(100vh - var(--plume-menu-height, 0px));
   }
@@ -949,6 +949,227 @@
 
   .popover-scan {
     font-size: 0.88rem;
+  }
+}
+
+@layer components {
+  /* The map, and beside it what can go. */
+  .workspace {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    min-height: 0;
+  }
+
+  .control-reclaim {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    border-color: color-mix(in oklab, var(--level) 40%, #2a394a);
+    color: #c9f2e4;
+  }
+
+  .control-reclaim[aria-pressed="true"] {
+    background: color-mix(in oklab, var(--level) 16%, #16212c);
+  }
+
+  .reclaim {
+    display: flex;
+    flex-direction: column;
+    width: min(25rem, 38vw);
+    min-height: 0;
+    overflow: hidden;
+    border-left: 1px solid var(--rule);
+    background: linear-gradient(180deg, #121c27, var(--plate) 30%);
+  }
+
+  .reclaim-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.5rem;
+    border-bottom: 1px solid var(--rule);
+    padding: 1rem 1.1rem 0.9rem;
+  }
+
+  .reclaim-figure .figure-value {
+    color: var(--level);
+    font-size: 2.3rem;
+    text-shadow: 0 0 22px color-mix(in oklab, var(--level) 30%, transparent);
+  }
+
+  .reclaim-caption {
+    margin-top: 0.3rem;
+    color: var(--quiet);
+    font-size: 0.86rem;
+  }
+
+  .reclaim-close {
+    padding: 0.25rem 0.5rem;
+  }
+
+  .reclaim-empty {
+    padding: 1.1rem;
+    color: var(--quiet);
+  }
+
+  .reclaim-groups {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0.2rem 0;
+  }
+
+  .reclaim-group {
+    border-bottom: 1px solid var(--rule);
+    padding: 0.8rem 1.1rem 0.85rem;
+  }
+
+  .reclaim-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.55rem;
+  }
+
+  .reclaim-led[data-risk="safe"] {
+    background: var(--level);
+    box-shadow: 0 0 7px color-mix(in oklab, var(--level) 70%, transparent);
+  }
+
+  .reclaim-led[data-risk="rebuild"] {
+    background: #d9a441;
+    box-shadow: 0 0 7px rgb(217 164 65 / 0.6);
+  }
+
+  .reclaim-led[data-risk="careful"] {
+    background: var(--clip);
+    box-shadow: 0 0 7px color-mix(in oklab, var(--clip) 60%, transparent);
+  }
+
+  .reclaim-title {
+    overflow: hidden;
+    font-weight: 650;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .reclaim-size {
+    font-weight: 700;
+    font-stretch: 112%;
+  }
+
+  .reclaim-why {
+    margin-top: 0.35rem;
+    color: var(--quiet);
+    font-size: 0.85rem;
+    line-height: 1.4;
+  }
+
+  .reclaim-risk {
+    color: #b8c4d2;
+  }
+
+  .reclaim-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+    margin-top: 0.6rem;
+  }
+
+  .reclaim-do {
+    padding: 0.3rem 0.7rem;
+    font-size: 0.86rem;
+  }
+
+  .reclaim-command {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    max-width: 100%;
+    padding: 0.3rem 0.4rem 0.3rem 0.6rem;
+    font-size: 0.82rem;
+  }
+
+  .reclaim-command code {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #c9f2e4;
+    font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  }
+
+  .reclaim-copy {
+    flex: none;
+    border-left: 1px solid #2a394a;
+    padding-left: 0.5rem;
+    color: var(--quiet);
+  }
+
+  .reclaim-more {
+    margin-left: auto;
+    padding: 0.3rem 0.5rem;
+    font-size: 0.84rem;
+  }
+
+  .reclaim-places {
+    display: grid;
+    gap: 0.1rem;
+    margin-top: 0.5rem;
+  }
+
+  .reclaim-place {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.6rem;
+    width: 100%;
+    border-radius: 5px;
+    padding: 0.25rem 0.4rem;
+    font-size: 0.83rem;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .reclaim-place:hover {
+    background: rgb(255 255 255 / 0.05);
+  }
+
+  /* Long paths keep their end (the folder's own name) in view. */
+  .reclaim-path {
+    overflow: hidden;
+    direction: rtl;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    unicode-bidi: plaintext;
+  }
+
+  .reclaim-place-size {
+    color: var(--quiet);
+  }
+
+  .reclaim-rest {
+    padding: 0.25rem 0.4rem;
+    color: var(--quiet);
+    font-size: 0.8rem;
+  }
+
+  .dialog-list {
+    display: grid;
+    gap: 0.15rem;
+    margin-top: 0.6rem;
+    font-size: 0.86rem;
+  }
+
+  .dialog-list li {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.6rem;
+    min-width: 0;
+  }
+
+  .dialog-list-size {
+    flex: none;
+    color: var(--quiet);
   }
 }
 

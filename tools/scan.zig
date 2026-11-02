@@ -1,8 +1,10 @@
 //! zig build scan -Doptimize=ReleaseFast -- <folder> [threads]: the scanner
-//! alone on a real folder, how long it takes, and what is biggest in it.
+//! alone on a real folder, how long it takes, what is biggest in it, and
+//! what the rules find that can go.
 
 const std = @import("std");
-const scan = @import("scan");
+const rules = @import("rules");
+const scan = rules.scanner;
 
 pub fn main(init: std.process.Init) !u8 {
     const args = try init.minimal.args.toSlice(init.arena.allocator());
@@ -46,6 +48,25 @@ pub fn main(init: std.process.Init) !u8 {
     for (order[0..@min(order.len, 10)]) |index| {
         const n = tree.node(index);
         std.debug.print("  {Bi:>10.1}  {s}{s}\n", .{ n.size, tree.name(index), if (n.kind == .directory) std.fs.path.sep_str else "" });
+    }
+
+    // What can go, by rule.
+    const found_at = std.Io.Clock.awake.now(io);
+    const finds = try rules.find(a, &tree, scan.Tree.root_index);
+    defer a.free(finds);
+    const found_ms = found_at.durationTo(std.Io.Clock.awake.now(io)).toMilliseconds();
+    var sizes: [rules.rules.len]u64 = @splat(0);
+    var counts: [rules.rules.len]u32 = @splat(0);
+    var total: u64 = 0;
+    for (finds) |f| {
+        sizes[f.rule] += tree.node(f.node).size;
+        counts[f.rule] += 1;
+        total += tree.node(f.node).size;
+    }
+    std.debug.print("\nreclaimable: {Bi:.1} in {d} places ({d} ms)\n", .{ total, finds.len, found_ms });
+    for (rules.rules, 0..) |rule, r| {
+        if (counts[r] == 0) continue;
+        std.debug.print("  {Bi:>10.1}  {s} ({d})\n", .{ sizes[r], rule.title, counts[r] });
     }
     return 0;
 }

@@ -94,6 +94,49 @@ pub fn remove(a: std.mem.Allocator, io: Io, path: []const u8, mode: Mode, home: 
     }
 }
 
+/// Empties the Recycle Bin of the disk `path` is on (Windows: this user's;
+/// Linux: the home Trash, `path` being it).
+pub fn emptyBin(a: std.mem.Allocator, io: Io, path: []const u8) Error!void {
+    switch (builtin.os.tag) {
+        .windows => {
+            const drive = std.unicode.wtf8ToWtf16LeAllocZ(a, path[0..@min(path.len, 3)]) catch return error.OutOfMemory;
+            defer a.free(drive);
+            const SHERB_NOCONFIRMATION = 0x1;
+            const SHERB_NOPROGRESSUI = 0x2;
+            const SHERB_NOSOUND = 0x4;
+            const result = SHEmptyRecycleBinW(null, drive.ptr, SHERB_NOCONFIRMATION | SHERB_NOPROGRESSUI | SHERB_NOSOUND);
+            // Already empty: E_UNEXPECTED (0x8000FFFF) on some systems.
+            if (result != 0 and @as(u32, @bitCast(result)) != 0x8000FFFF) return error.Failed;
+        },
+        .linux => {
+            const cwd = Io.Dir.cwd();
+            for ([_][]const u8{ "files", "info" }) |part| {
+                const folder = try std.fs.path.join(a, &.{ path, part });
+                defer a.free(folder);
+                var dir = cwd.openDir(io, folder, .{ .iterate = true }) catch continue;
+                defer dir.close(io);
+                // The names first: deleting while reading the folder skips some.
+                var names: std.ArrayList([]u8) = .empty;
+                defer {
+                    for (names.items) |name| a.free(name);
+                    names.deinit(a);
+                }
+                var it = dir.iterate();
+                while (it.next(io) catch null) |entry| try names.append(a, try a.dupe(u8, entry.name));
+                for (names.items) |name| {
+                    dir.deleteTree(io, name) catch |err| switch (err) {
+                        error.AccessDenied, error.PermissionDenied => return error.AccessDenied,
+                        else => return error.Failed,
+                    };
+                }
+            }
+        },
+        else => return error.Failed,
+    }
+}
+
+extern "shell32" fn SHEmptyRecycleBinW(window: ?*anyopaque, root: ?[*:0]const u16, flags: u32) callconv(.winapi) i32;
+
 /// Windows: SHFileOperation to the Recycle Bin. What it cannot take (too
 /// big) is not deleted silently: Windows asks first (FOF_WANTNUKEWARNING).
 fn recycle(a: std.mem.Allocator, path: []const u8) Error!void {

@@ -53,6 +53,8 @@ pub const Map = struct {
     lit: f32 = 0,
     clock: f64 = 0,
     last_ms: f64 = 0,
+    /// What can go shown (instances' info[3]), the rest dimmed.
+    marks: bool = false,
     /// The compositor thread's.
     gpu: ?Gpu = null,
 
@@ -72,6 +74,7 @@ pub const Map = struct {
         u_transform: gl.Int,
         u_header: gl.Int,
         u_hovered: gl.Int,
+        u_marks: gl.Int,
         intro: gl.Uint,
         i_size: gl.Int,
         i_viewport: gl.Int,
@@ -92,13 +95,19 @@ pub const Map = struct {
         map.instances.deinit(a);
     }
 
-    /// A new layout to draw; `zoom`: where it starts from (see zoomIn/zoomOut).
-    pub fn show(map: *Map, a: std.mem.Allocator, layout: *const treemap.Layout, zoom: ?[4]f32) !void {
+    /// A new layout to draw; `zoom`: where it starts from (see zoomIn/zoomOut);
+    /// `marks`, one per item: 2 what can go, 1 inside it, 0 the rest (drawn
+    /// while marks are shown).
+    pub fn show(map: *Map, a: std.mem.Allocator, layout: *const treemap.Layout, zoom: ?[4]f32, marks: ?[]const u8) !void {
         map.lock.lockUncancelable(map.io);
         defer map.lock.unlock(map.io);
         map.instances.clearRetainingCapacity();
         try map.instances.ensureTotalCapacity(a, layout.items.items.len);
-        for (layout.items.items) |item| map.instances.appendAssumeCapacity(instance(item));
+        for (layout.items.items, 0..) |item, i| {
+            var one = instance(item);
+            if (marks) |m| one.info[3] = m[i];
+            map.instances.appendAssumeCapacity(one);
+        }
         map.version += 1;
         map.hovered = -1;
         map.intro = false;
@@ -128,6 +137,15 @@ pub const Map = struct {
             map.version += 1;
             map.intro = true;
         }
+        map.redraw();
+    }
+
+    /// What can go shown on the map (the rest dimmed), or not.
+    pub fn showMarks(map: *Map, on: bool) void {
+        map.lock.lockUncancelable(map.io);
+        defer map.lock.unlock(map.io);
+        if (map.marks == on) return;
+        map.marks = on;
         map.redraw();
     }
 
@@ -205,6 +223,7 @@ pub const Map = struct {
         const detail = map.detail;
         const energy = map.energy;
         const lit = map.lit;
+        const marks = map.marks;
         map.lock.unlock(map.io);
 
         const height: f32 = @floatFromInt(frame.height);
@@ -242,6 +261,7 @@ pub const Map = struct {
         c.glUniform4f(g.u_transform, transform[0], transform[1], transform[2], transform[3]);
         c.glUniform1f(g.u_header, (treemap.Options{}).header);
         c.glUniform1i(g.u_hovered, hovered);
+        c.glUniform1f(g.u_marks, if (marks) 1 else 0);
         c.glBindVertexArray(g.array);
         g.extra.glDrawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, g.count);
         c.glBindVertexArray(0);
@@ -282,6 +302,7 @@ pub const Map = struct {
             .u_transform = core.glGetUniformLocation(program, "transform"),
             .u_header = core.glGetUniformLocation(program, "header"),
             .u_hovered = core.glGetUniformLocation(program, "hovered"),
+            .u_marks = core.glGetUniformLocation(program, "marks"),
             .intro = intro,
             .i_size = core.glGetUniformLocation(intro, "size"),
             .i_viewport = core.glGetUniformLocation(intro, "viewport"),
@@ -487,6 +508,7 @@ const fragment_source =
     \\flat in float lit;
     \\uniform float scale;
     \\uniform float header;
+    \\uniform float marks;
     \\out vec4 color;
     \\void main() {
     \\  float shape = kind.x;
@@ -515,6 +537,17 @@ const fragment_source =
     \\      c = c * (0.38 + 0.42 * dot);
     \\    }
     \\    if (edge < 0.75 * scale) c *= 0.32;
+    \\  }
+    \\  if (marks > 0.5) {
+    \\    // What can go stands out: the rest dimmed, each match outlined in
+    \\    // the meter's green, dashed.
+    \\    vec3 level = vec3(0.322, 0.780, 0.635);
+    \\    if (kind.w < 0.5) c *= 0.32;
+    \\    if (kind.w > 1.5) {
+    \\      float dash = step(0.5, fract((gl_FragCoord.x + gl_FragCoord.y) / (12.0 * scale)));
+    \\      if (edge < 2.5 * scale) c = mix(c, level, 0.35 + 0.65 * dash);
+    \\      else c = mix(c, level, 0.08);
+    \\    }
     \\  }
     \\  if (lit > 0.5) {
     \\    c = edge < 2.0 * scale ? mix(c, vec3(0.97, 0.98, 1.0), 0.9) : mix(c, vec3(1.0), 0.10);

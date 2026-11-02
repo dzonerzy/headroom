@@ -19,11 +19,12 @@ pub fn build(b: *std.Build) void {
     const scan = b.createModule(.{ .root_source_file = b.path("src/scan.zig"), .target = target, .optimize = optimize });
     const scan_tests = b.addTest(.{ .root_module = scan });
     b.step("test-scan", "Run the scanner's unit tests").dependOn(&b.addRunArtifact(scan_tests).step);
+    const rules = b.createModule(.{ .root_source_file = b.path("src/rules.zig"), .target = target, .optimize = optimize });
     const scan_tool = b.addExecutable(.{ .name = "scan", .root_module = b.createModule(.{
         .root_source_file = b.path("tools/scan.zig"),
         .target = target,
         .optimize = optimize,
-        .imports = &.{.{ .name = "scan", .module = scan }},
+        .imports = &.{.{ .name = "rules", .module = rules }},
     }) });
     const scan_run = b.addRunArtifact(scan_tool);
     scan_run.addPassthruArgs();

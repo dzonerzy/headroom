@@ -67,6 +67,51 @@ interface Item {
 
 type Kind = "folder" | "file" | "link" | "mount" | "other" | "rest";
 
+interface Reclaim {
+  size: number;
+  careful: number;
+  groups: Group[];
+  generation: number;
+}
+
+interface Group {
+  id: string;
+  title: string;
+  why: string;
+  risk: Risk;
+  action: Action;
+  command: string | null;
+  size: number;
+  count: number;
+  items: Place[];
+  nodes: number[];
+}
+
+type Risk = "safe" | "rebuild" | "careful";
+
+type Action = "delete" | "command" | "empty_bin" | "show";
+
+interface Place {
+  node: number;
+  path: string;
+  size: number;
+  parent: number;
+}
+
+type Mode = "trash" | "permanent";
+
+interface Cleaned {
+  size: number;
+  count: number;
+  failed: number;
+  reason: string | null;
+}
+
+interface Removed {
+  size: number;
+  files: number;
+}
+
 interface Removal {
   node: number;
   name: string;
@@ -77,13 +122,6 @@ interface Removal {
   refused: string | null;
   warning: string | null;
   generation: number;
-}
-
-type Mode = "trash" | "permanent";
-
-interface Removed {
-  size: number;
-  files: number;
 }
 
 interface Top {
@@ -110,8 +148,13 @@ interface AppErrors {
   cancelScan: never;
   view: "OutOfMemory" | "NoScan" | "NotAFolder";
   hover: "OutOfMemory";
+  reclaimable: "OutOfMemory";
+  showReclaimable: never;
+  highlight: never;
+  removeMany: "NoScan" | "Stale";
+  emptyBin: "AccessDenied" | "Canceled" | "OutOfMemory" | "FileNotFound" | "NotDir" | "NoScan" | "Stale" | "InUse" | "NotFound" | "TrashUnavailable" | "Failed";
   removal: "OutOfMemory" | "NoScan" | "NotFound";
-  remove: "AccessDenied" | "OutOfMemory" | "NoScan" | "NotFound" | "InUse" | "TrashUnavailable" | "Failed" | "Refused" | "Stale";
+  remove: "AccessDenied" | "OutOfMemory" | "NoScan" | "Stale" | "InUse" | "NotFound" | "TrashUnavailable" | "Failed" | "Refused";
   watching: never;
   setWatching: "Unsupported";
   watchTick: never;
@@ -137,6 +180,14 @@ interface AppBindings {
   view(arg1: number, arg2: number, arg3: number, arg4: number, arg5: number, arg6: number): View;
   /** Fails with PlumeError<AppErrors["hover"]>. */
   hover(arg1: number, arg2: number): Item | null;
+  /** Fails with PlumeError<AppErrors["reclaimable"]>. */
+  reclaimable(): Reclaim | null;
+  showReclaimable(arg1: boolean): void;
+  highlight(arg1: number): boolean;
+  /** Fails with PlumeError<AppErrors["removeMany"]>. */
+  removeMany(arg1: number[], arg2: number, arg3: Mode): Promise<Cleaned>;
+  /** Fails with PlumeError<AppErrors["emptyBin"]>. */
+  emptyBin(arg1: number, arg2: number): Promise<Removed>;
   /** Fails with PlumeError<AppErrors["removal"]>. */
   removal(arg1: number): Removal;
   /** Fails with PlumeError<AppErrors["remove"]>. */

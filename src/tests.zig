@@ -16,6 +16,7 @@ test {
     _ = @import("elevate.zig");
     _ = @import("remove.zig");
     _ = @import("app.zig");
+    _ = @import("rules.zig");
 }
 
 fn write(dir: std.Io.Dir, path: []const u8, bytes: usize) !void {
@@ -39,6 +40,48 @@ fn shot(h: *plume.testing.Harness, name: []const u8) !void {
     var buffer: [512]u8 = undefined;
     const path = try std.fmt.bufPrint(&buffer, "{s}/{s}.png", .{ folder, name });
     try std.Io.Dir.cwd().writeFile(std.testing.io, .{ .sub_path = path, .data = png });
+}
+
+test "what can go: found, listed, deleted" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try write(tmp.dir, "web/package.json", 2_000);
+    try write(tmp.dir, "web/node_modules/react/index.js", 600_000);
+    try write(tmp.dir, "web/node_modules/vite/bin.js", 300_000);
+    try write(tmp.dir, "tool/__pycache__/main.pyc", 90_000);
+    try write(tmp.dir, "photos/trip.jpg", 400_000);
+    const root = try tmp.dir.realPathFileAlloc(std.testing.io, ".", std.testing.allocator);
+    defer std.testing.allocator.free(root);
+
+    const h = try plume.testing.Harness.startProject(@import("plume_project"), .{ .width = 1200, .height = 780 });
+    defer h.stop();
+    var map: Map = .{ .window = null, .io = std.testing.io };
+    defer map.deinit(std.heap.smp_allocator);
+    var state: App = .{ .io = std.testing.io, .home_path = root, .map = &map };
+    defer state.deinit();
+    state.events = h.app.events(App.Events);
+    try h.app.bind("App", App, &state);
+    try h.open();
+
+    try h.click(".stage .control-main");
+    try h.waitFor(".control-reclaim");
+    try std.testing.expect(std.mem.endsWith(u8, try h.text(".control-reclaim"), "can go"));
+    try h.click(".control-reclaim");
+    try h.waitFor(".reclaim");
+    // node_modules (the biggest), then the bytecode; the photo is not listed.
+    try h.expectText(".reclaim-group:first-child .reclaim-title", "npm packages (node_modules)");
+    try std.testing.expectEqual(@as(u32, 2), try h.evaluate(u32, "document.querySelectorAll('.reclaim-group').length"));
+    try shot(h, "reclaim");
+
+    // Delete it, for good: gone from the disk, the list and the map.
+    try h.click(".reclaim-group:first-child .reclaim-do");
+    try h.waitFor(".dialog");
+    try h.click(".control-danger");
+    try h.waitUntil("document.querySelector('.veil') === null");
+    try std.testing.expectError(error.FileNotFound, tmp.dir.access(std.testing.io, "web/node_modules", .{}));
+    try tmp.dir.access(std.testing.io, "web/package.json", .{});
+    try h.waitUntil("document.querySelectorAll('.reclaim-group').length === 1");
+    try h.waitUntil("document.querySelector('.notice')?.textContent.startsWith('Deleted 1 place') === true");
 }
 
 test "the tray's popover" {
@@ -65,10 +108,10 @@ test "the tray's popover" {
     try h.waitFor(".popover");
     try std.testing.expect((try h.text(".popover-figure .figure-value")).len > 0);
     try std.testing.expect(std.mem.startsWith(u8, try h.text(".popover-caption"), "headroom, "));
-    // The arc: 40 segments, the used share lit once its sweep is over.
-    h.advance(800);
+    // The arc: 40 segments, the used share lit as its sweep goes (on the
+    // page's own clock: waited for).
     try std.testing.expectEqual(@as(u32, 40), try h.evaluate(u32, "document.querySelectorAll('.arc-segment').length"));
-    try std.testing.expect(try h.evaluate(u32, "document.querySelectorAll('.arc-segment[data-on]').length") >= 1);
+    try h.waitUntil("document.querySelectorAll('.arc-segment[data-on]').length >= 1");
     try h.expectText(".popover-entry:first-child .popover-name", "games");
     try std.testing.expectEqual(@as(u32, 3), try h.evaluate(u32, "document.querySelectorAll('.popover-entry').length"));
     try shot(h, "popover");

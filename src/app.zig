@@ -11,9 +11,10 @@ const volume = @import("volume.zig");
 const map_layer = @import("map.zig");
 const elevate = @import("elevate.zig");
 const removing = @import("remove.zig");
+const rules = @import("rules.zig");
 
 pub const App = struct {
-    pub const async_methods = .{ "scan", "remove" };
+    pub const async_methods = .{ "scan", "remove", "removeMany", "emptyBin" };
     /// main.zig's, not the page's.
     pub const hidden = .{ "startWatching", "menuChosen", "closing" };
 
@@ -97,6 +98,49 @@ pub const App = struct {
 
     pub const Removed = struct { size: u64, files: u64 };
 
+    /// What a group's cleaning did.
+    pub const Cleaned = struct {
+        size: u64,
+        count: u32,
+        /// Items that could not go, and why the first one could not.
+        failed: u32,
+        reason: ?[]const u8,
+    };
+
+    /// What can go, found by the rules in the last scan.
+    pub const Reclaim = struct {
+        /// What goes by itself or comes back with a build: the headline.
+        size: u64,
+        /// What needs a look first (virtual disks, the Recycle Bin, ...).
+        careful: u64,
+        groups: []const Group,
+        generation: u32,
+    };
+
+    pub const Group = struct {
+        id: []const u8,
+        title: []const u8,
+        why: []const u8,
+        risk: rules.Risk,
+        action: rules.Action,
+        command: ?[]const u8,
+        size: u64,
+        count: u32,
+        /// The biggest ones (at most 40).
+        items: []const Place,
+        /// All of them: what removeMany deletes.
+        nodes: []const u32,
+    };
+
+    pub const Place = struct {
+        node: u32,
+        /// From the folder scanned ("projects/web/node_modules").
+        path: []const u8,
+        size: u64,
+        /// The folder it is in: where the map goes for it.
+        parent: u32,
+    };
+
     io: std.Io,
     home_path: []const u8,
     map: *map_layer.Map,
@@ -117,6 +161,11 @@ pub const App = struct {
     scanning: std.atomic.Value(bool) = .init(false),
     /// Counts scans: what a removal was asked about must still be there.
     generation: u32 = 0,
+    /// What the rules found in the tree, and those nodes as a set (the map's
+    /// marks).
+    finds: []const rules.Find = &.{},
+    found: std.DynamicBitSetUnmanaged = .{},
+    marks_shown: bool = false,
 
     /// Set by main.zig: the tray, notifications and the window are its.
     plume_app: ?*plume.App = null,
@@ -144,6 +193,8 @@ pub const App = struct {
     pub fn deinit(self: *App) void {
         if (self.layout) |*l| l.deinit(gpa);
         if (self.tree) |*t| t.deinit(gpa);
+        gpa.free(self.finds);
+        self.found.deinit(gpa);
     }
 
     /// Where a scan starts by default: the user's home folder.
@@ -201,6 +252,10 @@ pub const App = struct {
             .cancel = &self.cancel,
         });
         const ms = start.durationTo(std.Io.Clock.awake.now(self.io)).toMilliseconds();
+        // What can go, while still on the scan's thread (tens of ms).
+        const finds: []const rules.Find = rules.find(gpa, &tree, scanner.Tree.root_index) catch &.{};
+        var found = std.DynamicBitSetUnmanaged.initEmpty(gpa, tree.nodes.items.len) catch std.DynamicBitSetUnmanaged{};
+        if (found.bit_length > 0) for (finds) |f| found.set(f.node);
         const top = tree.node(scanner.Tree.root_index);
         const result: Scanned = .{
             .path = try allocator.dupe(u8, tree.root),
@@ -217,6 +272,10 @@ pub const App = struct {
         self.layout = null;
         if (self.tree) |*t| t.deinit(gpa);
         self.tree = tree;
+        gpa.free(self.finds);
+        self.finds = finds;
+        self.found.deinit(gpa);
+        self.found = found;
         self.generation +%= 1;
         self.root = scanner.Tree.root_index;
         self.legend_root = null;
@@ -283,7 +342,9 @@ pub const App = struct {
         self.layout = next;
         self.root = node;
         self.map.setViewport(.{ .x = x, .y = y, .w = width, .h = height }, scale);
-        try self.map.show(gpa, &self.layout.?, zoom);
+        const marks = try self.marksFor(tree, &self.layout.?);
+        defer gpa.free(marks);
+        try self.map.show(gpa, &self.layout.?, zoom, marks);
 
         var crumbs: std.ArrayList(Crumb) = .empty;
         var at = node;
@@ -341,6 +402,165 @@ pub const App = struct {
             .unreadable = n.unreadable,
             .opens = item.shape != .rest and n.kind == .directory and n.child_count > 0 and item.node != self.root,
         };
+    }
+
+    /// Per item of `layout`: 2 what the rules found, 1 inside it, 0 the rest.
+    fn marksFor(self: *App, tree: *const scanner.Tree, layout: *const treemap.Layout) ![]u8 {
+        const marks = try gpa.alloc(u8, layout.items.items.len);
+        @memset(marks, 0);
+        if (self.found.bit_length != tree.nodes.items.len) return marks;
+        for (layout.items.items, marks) |item, *mark| {
+            if (item.shape != .rest and self.found.isSet(item.node)) {
+                mark.* = 2;
+                continue;
+            }
+            // Inside a match (the view itself may be inside one).
+            var at = item.node;
+            while (true) {
+                if (self.found.isSet(at)) {
+                    mark.* = 1;
+                    break;
+                }
+                if (at == 0) break;
+                at = tree.node(at).parent;
+            }
+        }
+        return marks;
+    }
+
+    /// What the rules found in the last scan, grouped, biggest first; what
+    /// was deleted since is left out.
+    pub fn reclaimable(self: *App, allocator: std.mem.Allocator) error{OutOfMemory}!?Reclaim {
+        self.lock.lockUncancelable(self.io);
+        defer self.lock.unlock(self.io);
+        const tree = &(self.tree orelse return null);
+
+        // One group per rule id (several rules share one).
+        var groups: std.ArrayList(Group) = .empty;
+        var places: std.ArrayList(std.ArrayList(Place)) = .empty;
+        var total: u64 = 0;
+        var careful: u64 = 0;
+        for (self.finds) |f| {
+            const n = tree.node(f.node);
+            if (n.size == 0 or gone(tree, f.node)) continue;
+            const rule = rules.rules[f.rule];
+            const g = for (groups.items, 0..) |group, i| {
+                if (std.mem.eql(u8, group.id, rule.id)) break i;
+            } else blk: {
+                try groups.append(allocator, .{ .id = rule.id, .title = rule.title, .why = rule.why, .risk = rule.risk, .action = rule.action, .command = rule.command, .size = 0, .count = 0, .items = &.{}, .nodes = &.{} });
+                try places.append(allocator, .empty);
+                break :blk groups.items.len - 1;
+            };
+            groups.items[g].size += n.size;
+            groups.items[g].count += 1;
+            if (rule.risk == .careful or rule.action == .show or rule.action == .command) careful += n.size else total += n.size;
+            try places.items[g].append(allocator, .{ .node = f.node, .path = "", .size = n.size, .parent = n.parent });
+        }
+        const bySize = struct {
+            fn group(_: void, l: Group, r: Group) bool {
+                return l.size > r.size;
+            }
+            fn place(_: void, l: Place, r: Place) bool {
+                return l.size > r.size;
+            }
+        };
+        for (groups.items, places.items) |*group, *list| {
+            std.mem.sort(Place, list.items, {}, bySize.place);
+            const nodes = try allocator.alloc(u32, list.items.len);
+            for (list.items, nodes) |place, *n| n.* = place.node;
+            group.nodes = nodes;
+            const kept = list.items[0..@min(list.items.len, 40)];
+            for (kept) |*place| place.path = try relative(allocator, tree, place.node);
+            group.items = kept;
+        }
+        std.mem.sort(Group, groups.items, {}, bySize.group);
+        return .{ .size = total, .careful = careful, .groups = groups.items, .generation = self.generation };
+    }
+
+    /// What the rules found shown on the map (the rest dimmed), or not.
+    pub fn showReclaimable(self: *App, on: bool) void {
+        self.marks_shown = on;
+        self.map.showMarks(on);
+    }
+
+    /// `node` lit on the map, if it is drawn (the panel's item under the mouse).
+    pub fn highlight(self: *App, node: u32) bool {
+        self.lock.lockUncancelable(self.io);
+        defer self.lock.unlock(self.io);
+        const layout = &(self.layout orelse return false);
+        for (layout.items.items, 0..) |item, i| {
+            if (item.node == node and item.shape != .rest) {
+                self.map.hover(i);
+                return true;
+            }
+        }
+        self.map.hover(null);
+        return false;
+    }
+
+    /// Deletes several items (a group of what can go), one after another,
+    /// on a worker thread; refused ones and failures are counted.
+    pub fn removeMany(self: *App, allocator: std.mem.Allocator, nodes: []const u32, generation: u32, mode: removing.Mode) error{ NoScan, Stale }!Cleaned {
+        var cleaned: Cleaned = .{ .size = 0, .count = 0, .failed = 0, .reason = null };
+        for (nodes) |node| {
+            const removed = self.remove(node, generation, mode) catch |err| switch (err) {
+                error.NoScan => return error.NoScan,
+                error.Stale => return error.Stale,
+                else => {
+                    cleaned.failed += 1;
+                    if (cleaned.reason == null) cleaned.reason = allocator.dupe(u8, @errorName(err)) catch null;
+                    continue;
+                },
+            };
+            cleaned.size += removed.size;
+            cleaned.count += 1;
+        }
+        return cleaned;
+    }
+
+    /// Empties the Recycle Bin (Windows) or the Trash (Linux) that `node` is,
+    /// on a worker thread, then measures that folder again.
+    pub fn emptyBin(self: *App, node: u32, generation: u32) (removing.Error || scanner.Error || error{ NoScan, Stale })!Removed {
+        const path = blk: {
+            self.lock.lockUncancelable(self.io);
+            defer self.lock.unlock(self.io);
+            const tree = &(self.tree orelse return error.NoScan);
+            if (generation != self.generation or node >= tree.nodes.items.len) return error.Stale;
+            break :blk try tree.path(gpa, node);
+        };
+        defer gpa.free(path);
+        try removing.emptyBin(gpa, self.io, path);
+        return self.refresh(node, generation, path);
+    }
+
+    /// `node` measured again (after something outside Headroom changed it):
+    /// the folders above take the difference, and it is drawn as one tile.
+    fn refresh(self: *App, node: u32, generation: u32, path: []const u8) (scanner.Error || error{ NoScan, Stale })!Removed {
+        var again = scanner.scan(gpa, self.io, path, .{}) catch |err| switch (err) {
+            error.FileNotFound => scanner.Tree{ .root = try gpa.dupeSentinel(u8, path, 0) },
+            else => return err,
+        };
+        defer again.deinit(gpa);
+        const now: scanner.Node = if (again.nodes.items.len > 0) again.node(0) else .{ .parent = 0, .name_start = 0, .name_len = 0, .kind = .directory, .size = 0, .files = 0 };
+
+        self.lock.lockUncancelable(self.io);
+        defer self.lock.unlock(self.io);
+        const tree = &(self.tree orelse return error.NoScan);
+        if (generation != self.generation) return error.Stale;
+        const n = &tree.nodes.items[node];
+        const freed: Removed = .{ .size = n.size -| now.size, .files = n.files -| now.files };
+        n.size = now.size;
+        n.files = now.files;
+        n.child_count = 0;
+        var at = n.parent;
+        while (true) : (at = tree.nodes.items[at].parent) {
+            const parent = &tree.nodes.items[at];
+            parent.size -|= freed.size;
+            parent.files -|= freed.files;
+            if (at == 0 or node == 0) break;
+        }
+        self.legend_root = null;
+        return freed;
     }
 
     /// What deleting `node` means: refused (and why), warned about, or fine.
@@ -649,6 +869,25 @@ fn human(buffer: []u8, n: u64) []const u8 {
     if (unit == 0) return std.fmt.bufPrint(buffer, "{d} bytes", .{n}) catch "";
     if (value < 100) return std.fmt.bufPrint(buffer, "{d:.1} {s}", .{ value, units[unit] }) catch "";
     return std.fmt.bufPrint(buffer, "{d:.0} {s}", .{ value, units[unit] }) catch "";
+}
+
+/// Whether `node` or a folder above it was deleted (its size taken away).
+fn gone(tree: *const scanner.Tree, node: u32) bool {
+    var at = tree.node(node).parent;
+    while (at != 0) : (at = tree.node(at).parent) {
+        if (tree.node(at).size == 0) return true;
+    }
+    return false;
+}
+
+/// `node`'s path from the folder scanned, "/" between folders.
+fn relative(allocator: std.mem.Allocator, tree: *const scanner.Tree, node: u32) ![]const u8 {
+    var parts: std.ArrayList([]const u8) = .empty;
+    defer parts.deinit(allocator);
+    var at = node;
+    while (at != 0) : (at = tree.node(at).parent) try parts.append(allocator, tree.name(at));
+    std.mem.reverse([]const u8, parts.items);
+    return std.mem.join(allocator, std.fs.path.sep_str, parts.items);
 }
 
 /// Whether `above` is `node` or holds it.
