@@ -72,6 +72,9 @@
   }
 
   .wordmark {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
     flex: none;
     font-size: 1.05rem;
     font-weight: 720;
@@ -216,10 +219,65 @@
     font-size: 0.86rem;
   }
 
+  .mark {
+    width: 1.55rem;
+    height: 1.55rem;
+    flex: none;
+  }
+
+  .gauge {
+    display: grid;
+    gap: 0.35rem;
+  }
+
   .segments {
     display: flex;
     gap: 3px;
     height: 1.6rem;
+  }
+
+  /* The scale: the disk at its quarters, like a meter's dB marks. */
+  .scale {
+    position: relative;
+    height: 1rem;
+    color: #5f6f82;
+    font-size: 0.74rem;
+    font-stretch: 85%;
+  }
+
+  .tick {
+    position: absolute;
+    top: 0;
+    transform: translateX(-50%);
+    white-space: nowrap;
+  }
+
+  .tick:first-child {
+    transform: none;
+  }
+
+  .tick:nth-child(5) {
+    transform: translateX(-100%);
+  }
+
+  .scale-focus {
+    position: absolute;
+    inset: 0 auto auto 50%;
+    transform: translateX(-50%);
+    padding: 0 0.6rem;
+    background: var(--plate);
+    color: var(--ink);
+    white-space: nowrap;
+  }
+
+  .scale-focus-name {
+    color: #c9f2e4;
+    font-weight: 650;
+  }
+
+  .segment[data-state="focus"] {
+    background: #c9f2e4;
+    box-shadow: 0 0 10px color-mix(in oklab, var(--level) 80%, transparent);
   }
 
   .segment {

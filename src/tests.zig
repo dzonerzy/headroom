@@ -27,6 +27,18 @@ fn write(dir: std.Io.Dir, path: []const u8, bytes: usize) !void {
 
 const Point = struct { x: f32, y: f32 };
 
+/// With HEADROOM_SHOTS set to a folder: the page as drawn, <name>.png in it
+/// (headless: the map's GL layer is not in it).
+fn shot(h: *plume.testing.Harness, name: []const u8) !void {
+    // The process's own environment: the build's is cached with its configuration.
+    const folder = std.testing.environ.getAlloc(std.testing.allocator, "HEADROOM_SHOTS") catch return;
+    defer std.testing.allocator.free(folder);
+    const png = try h.capturePng();
+    var buffer: [512]u8 = undefined;
+    const path = try std.fmt.bufPrint(&buffer, "{s}/{s}.png", .{ folder, name });
+    try std.Io.Dir.cwd().writeFile(std.testing.io, .{ .sub_path = path, .data = png });
+}
+
 test "scanning a folder, opening one of its folders, going back" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -88,6 +100,15 @@ test "scanning a folder, opening one of its folders, going back" {
     const item = (try state.hover(h.arena.allocator(), file.x - map_box.x, file.y - map_box.y)).?;
     try std.testing.expectEqualStrings("engine.zig", item.name);
     try std.testing.expectEqualStrings("Source code", item.category.?.name);
+
+    // The meter follows the mouse: the file's share of the disk glows, named.
+    try h.clickAt(file.x, file.y);
+    try h.waitFor(".scale-focus");
+    const caption = try h.text(".scale-focus");
+    try std.testing.expect(std.mem.startsWith(u8, caption, "engine.zig is "));
+    try std.testing.expect(std.mem.endsWith(u8, caption, " of the disk"));
+    try std.testing.expect(try h.evaluate(u32, "document.querySelectorAll('.segment[data-state=focus]').length") >= 1);
+    try shot(h, "meter");
 
     // Escape: back up.
     try h.press("Escape", .{});

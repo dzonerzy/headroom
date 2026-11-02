@@ -28,4 +28,15 @@ pub fn build(b: *std.Build) void {
     const scan_run = b.addRunArtifact(scan_tool);
     scan_run.addPassthruArgs();
     b.step("scan", "Scan a folder: zig build scan -- <folder> [threads]").dependOn(&scan_run.step);
+
+    // icon.png, drawn by code.
+    const icon_tool = b.addExecutable(.{ .name = "icon", .root_module = b.createModule(.{
+        .root_source_file = b.path("tools/icon.zig"),
+        .target = b.graph.host,
+        .optimize = .ReleaseFast,
+    }) });
+    const icon_run = b.addRunArtifact(icon_tool);
+    icon_run.setCwd(b.path("."));
+    icon_run.addArg("icon.png");
+    b.step("icon", "Draw icon.png").dependOn(&icon_run.step);
 }

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type MouseEv
 // Generated from src/app.zig at every build: App's methods and events, typed.
 import { App, Events, Plume, PlumeError, type Item, type Label, type Progress, type Scanned, type Space, type View } from "./bindings";
 import { bytes, compact, exact, plural, seconds, share } from "./format";
-import { Meter } from "./Meter";
+import { Mark, Meter } from "./Meter";
 
 type Phase =
   | { name: "start" }
@@ -197,6 +197,7 @@ export default function Root() {
       <header className="deck">
         <div className="deck-row">
           <h1 className="wordmark">
+            <Mark />
             Headroom
             {admin.current && <span className="wordmark-mode">as administrator</span>}
           </h1>
@@ -229,7 +230,12 @@ export default function Root() {
             </button>
           </div>
         </div>
-        <Meter space={space} level={level} scanning={scanning} />
+        <Meter
+          space={space}
+          level={level}
+          scanning={scanning}
+          focus={hovered && hovered.kind !== "rest" ? { name: hovered.name, size: hovered.size } : null}
+        />
       </header>
 
       <section
