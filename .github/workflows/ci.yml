@@ -1,0 +1,111 @@
+# Headroom on Windows and Linux: the tests (headless, no display), the build,
+# a start that loads the page. A tag v<version> also packages it (an
+# installer or a zip on Windows; .deb, .tar.gz and an AppImage on Linux, with
+# their signed update assets) and publishes the release, its notes the tag's
+# message.
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: write
+
+env:
+  ZIG_VERSION: 0.17.0
+  PLUME_VERSION: 0.2.0
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: The runtime libraries and a headless display (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libx11-6 libxext6 libxkbcommon0 libwayland-client0 libwayland-egl1 \
+            libegl1 libegl-mesa0 libgles2 libgl1-mesa-dri fonts-dejavu-core \
+            xvfb xauth dbus dbus-x11 libdbus-1-3
+      - name: The plume tool
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p tools-bin
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            gh release download "v$PLUME_VERSION" --repo dzonerzy/plume --pattern "plume-$PLUME_VERSION-windows-x64.exe" --output tools-bin/plume.exe
+          else
+            gh release download "v$PLUME_VERSION" --repo dzonerzy/plume --pattern "plume-$PLUME_VERSION-linux-x64" --output tools-bin/plume
+            chmod +x tools-bin/plume
+          fi
+          echo "$PWD/tools-bin" >> "$GITHUB_PATH"
+      - name: The frontend's dependencies
+        run: npm ci
+      - name: Tests (headless)
+        shell: bash
+        run: env -u DISPLAY -u WAYLAND_DISPLAY bash .github/retry.sh plume test
+      - name: Build
+        shell: bash
+        run: bash .github/retry.sh plume build
+      - name: It starts and loads its page
+        shell: bash
+        env:
+          PLUME_SMOKE: "1"
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            dbus-run-session -- xvfb-run -a -s "-screen 0 1280x1024x24" ./build/bin/headroom
+          else
+            ./build/bin/headroom.exe
+          fi
+      - name: appimagetool (Linux, for releases)
+        if: runner.os == 'Linux' && startsWith(github.ref, 'refs/tags/v')
+        run: |
+          curl -fsSL -o tools-bin/appimagetool.AppImage https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x tools-bin/appimagetool.AppImage
+          printf '#!/bin/sh\nexec "%s/appimagetool.AppImage" --appimage-extract-and-run "$@"\n' "$PWD/tools-bin" > tools-bin/appimagetool
+          chmod +x tools-bin/appimagetool
+      - name: Packages (releases)
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          PLUME_UPDATE_KEY: ${{ secrets.PLUME_UPDATE_KEY }}
+        run: |
+          plume package --skip-build
+          ls -la build/package
+      - uses: actions/upload-artifact@v4
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          name: packages-${{ runner.os }}
+          path: build/package/*
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd out && sha256sum * > SHA256SUMS && cd ..
+          git fetch --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
+          git tag -l --format='%(contents)' "$GITHUB_REF_NAME" > notes.md
+          gh release create "$GITHUB_REF_NAME" out/* --title "Headroom ${GITHUB_REF_NAME#v}" --notes-file notes.md --verify-tag

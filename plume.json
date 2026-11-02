@@ -18,5 +18,13 @@
   "frontend": {
     "dir": "frontend",
     "dev_url": "http://localhost:5173"
+  },
+  "publisher": "dzonerzy",
+  "description": "See what fills your disk, and what can go",
+  "copyright": "Copyright (C) 2026 dzonerzy",
+  "categories": "Utility;System;FileTools;",
+  "update": {
+    "github": "dzonerzy/headroom",
+    "public_key": "90OE/hWWzOZsiLwrMsY2Ab8lC76q00KWNdlx0is5zAc="
   }
 }
