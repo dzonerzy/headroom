@@ -67,6 +67,25 @@ interface Item {
 
 type Kind = "folder" | "file" | "link" | "mount" | "other" | "rest";
 
+interface Removal {
+  node: number;
+  name: string;
+  path: string;
+  size: number;
+  files: number;
+  folder: boolean;
+  refused: string | null;
+  warning: string | null;
+  generation: number;
+}
+
+type Mode = "trash" | "permanent";
+
+interface Removed {
+  size: number;
+  files: number;
+}
+
 interface Progress {
   files: number;
   folders: number;
@@ -85,6 +104,8 @@ interface AppErrors {
   cancelScan: never;
   view: "OutOfMemory" | "NoScan" | "NotAFolder";
   hover: "OutOfMemory";
+  removal: "OutOfMemory" | "NoScan" | "NotFound";
+  remove: "AccessDenied" | "OutOfMemory" | "NoScan" | "NotFound" | "InUse" | "TrashUnavailable" | "Failed" | "Refused" | "Stale";
 }
 
 interface AppBindings {
@@ -102,6 +123,10 @@ interface AppBindings {
   view(arg1: number, arg2: number, arg3: number, arg4: number, arg5: number, arg6: number): View;
   /** Fails with PlumeError<AppErrors["hover"]>. */
   hover(arg1: number, arg2: number): Item | null;
+  /** Fails with PlumeError<AppErrors["removal"]>. */
+  removal(arg1: number): Removal;
+  /** Fails with PlumeError<AppErrors["remove"]>. */
+  remove(arg1: number, arg2: number, arg3: Mode): Promise<Removed>;
 }
 
 // The page runtime: the window, dialogs, clipboard, screens and menus.

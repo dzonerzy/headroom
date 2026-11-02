@@ -14,6 +14,7 @@ test {
     _ = @import("categories.zig");
     _ = @import("volume.zig");
     _ = @import("elevate.zig");
+    _ = @import("remove.zig");
 }
 
 fn write(dir: std.Io.Dir, path: []const u8, bytes: usize) !void {
@@ -109,6 +110,32 @@ test "scanning a folder, opening one of its folders, going back" {
     try std.testing.expect(std.mem.endsWith(u8, caption, " of the disk"));
     try std.testing.expect(try h.evaluate(u32, "document.querySelectorAll('.segment[data-state=focus]').length") >= 1);
     try shot(h, "meter");
+
+    // Deleting for good (the Recycle Bin is the user's: not in a test):
+    // Shift+Delete on photo.png asks, in red; the red button deletes it,
+    // from the disk and from the map, without a new scan.
+    const photo = try h.evaluate(Point,
+        \\(() => {
+        \\  const tile = [...document.querySelectorAll('.label-tile')]
+        \\    .find((l) => l.querySelector('.label-name').textContent === 'photo.png');
+        \\  const r = tile.getBoundingClientRect();
+        \\  return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+        \\})()
+    );
+    try h.clickAt(photo.x, photo.y);
+    try h.press("Delete", .{ .shift = true });
+    try h.waitFor(".dialog[data-mode=permanent]");
+    try h.expectText(".dialog-title", "Delete photo.png permanently?");
+    try shot(h, "delete");
+    try h.click(".control-danger");
+    try h.waitUntil("document.querySelector('.veil') === null");
+    try std.testing.expectError(error.FileNotFound, tmp.dir.access(std.testing.io, "big/photo.png", .{}));
+    try h.waitUntil("document.querySelector('.notice')?.textContent.startsWith('Deleted photo.png') === true");
+    try std.testing.expect(!try h.evaluate(bool, "[...document.querySelectorAll('.label-name')].some((l) => l.textContent === 'photo.png')"));
+
+    // What Headroom does not delete: the folder scanned.
+    const scanned = try state.removal(h.arena.allocator(), 0);
+    try std.testing.expect(scanned.refused != null);
 
     // Escape: back up.
     try h.press("Escape", .{});

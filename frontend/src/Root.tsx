@@ -3,6 +3,8 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type MouseEv
 import { App, Events, Plume, PlumeError, type Item, type Label, type Progress, type Scanned, type Space, type View } from "./bindings";
 import { bytes, compact, exact, plural, seconds, share } from "./format";
 import { Mark, Meter } from "./Meter";
+import { bin, ConfirmRemove, type Mode } from "./Remove";
+import type { Removal } from "./bindings";
 
 type Phase =
   | { name: "start" }
@@ -23,6 +25,61 @@ export default function Root() {
   const shown = useRef<number | null>(null);
   const admin = useRef(App.admin());
   const [elevating, setElevating] = useState(false);
+  const [confirm, setConfirm] = useState<{ removal: Removal; mode: Mode; busy: boolean; error: string | null } | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  // A notice stays a few seconds.
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(null), 6000);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
+
+  /** Asks before deleting `node`. */
+  function askRemove(node: number, mode: Mode = "trash") {
+    const removal = App.removal(node);
+    if (removal.refused) {
+      setNotice(`${removal.name} cannot be deleted: ${removal.refused}.`);
+      return;
+    }
+    setConfirm({ removal, mode, busy: false, error: null });
+  }
+
+  async function remove() {
+    if (!confirm) return;
+    const { removal, mode } = confirm;
+    setConfirm({ ...confirm, busy: true, error: null });
+    try {
+      const removed = await App.remove(removal.node, removal.generation, mode);
+      setConfirm(null);
+      if (shown.current !== null) show(shown.current);
+      if (phase.name === "ready") setSpace(App.space(phase.scanned.path));
+      setNotice(
+        mode === "trash"
+          ? `Moved ${removal.name} to the ${bin} (${bytes(removed.size)}). Empty the ${bin} to get the space back.`
+          : `Deleted ${removal.name}: ${bytes(removed.size)} freed.`,
+      );
+    } catch (error) {
+      const code = error instanceof PlumeError ? String(error.code) : "Failed";
+      const reasons: Record<string, string> = {
+        InUse: "Another program has it open. Close that program and try again.",
+        AccessDenied: admin.current
+          ? "Even an administrator is not allowed to delete it."
+          : "Headroom is not allowed to delete it. Scanning as administrator may let it.",
+        NotFound: "It is not there anymore.",
+        TrashUnavailable: `It cannot go to the ${bin} (another disk, or too long a path). It can be deleted permanently instead.`,
+        Refused: "Headroom does not delete this.",
+        Stale: "The folder was scanned again since. Try again on the new map.",
+        Failed: "It could not be deleted.",
+      };
+      setConfirm({
+        removal,
+        mode: code === "TrashUnavailable" ? "permanent" : mode,
+        busy: false,
+        error: reasons[code] ?? reasons.Failed,
+      });
+    }
+  }
 
   // Restarted as administrator to scan a folder again: scan it now.
   useEffect(() => {
@@ -136,11 +193,21 @@ export default function Root() {
 
   useEffect(() => {
     function key(event: KeyboardEvent) {
+      if (confirm) {
+        if (event.key === "Escape" && !confirm.busy) setConfirm(null);
+        return;
+      }
+      if (event.key === "Delete" && hovered && hovered.kind !== "rest") {
+        askRemove(hovered.node, event.shiftKey ? "permanent" : "trash");
+        return;
+      }
       if ((event.key === "Backspace" || event.key === "Escape") && !(event.target instanceof HTMLInputElement)) up();
     }
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
-  }, [up]);
+    // askRemove reads the current state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [up, confirm, hovered]);
 
   function where(event: MouseEvent) {
     const area = map.current!.getBoundingClientRect();
@@ -173,11 +240,23 @@ export default function Root() {
     const item = App.hover(x, y);
     if (!item) return;
     const folderPath = item.kind === "file" || item.kind === "rest" ? parentOf(item.path, item.kind) : item.path;
+    const removal = item.kind === "rest" ? null : App.removal(item.node);
     const choice = await Plume.menu.popup(
       [
         ...(item.opens ? [{ id: "open", label: `Open ${item.name}` }] : []),
         { id: "reveal", label: Plume.platform === "windows" ? "Show in Explorer" : "Show in the file manager" },
         { id: "copy", label: "Copy path" },
+        ...(removal
+          ? [
+              "separator" as const,
+              ...(removal.refused
+                ? [{ id: "refused", label: `Cannot delete: ${removal.refused}`, enabled: false }]
+                : [
+                    { id: "trash", label: `Move to the ${bin}…`, accelerator: "Delete" },
+                    { id: "permanent", label: "Delete permanently…", accelerator: "Shift+Delete" },
+                  ]),
+            ]
+          : []),
         ...(view.crumbs.length > 1 ? ["separator" as const, { id: "up", label: "Back up one folder" }] : []),
       ],
       event.clientX,
@@ -186,6 +265,7 @@ export default function Root() {
     if (choice === "open") show(item.node);
     if (choice === "reveal") Plume.app.openPath(folderPath);
     if (choice === "copy") Plume.clipboard.writeText(item.path);
+    if (choice === "trash" || choice === "permanent") askRemove(item.node, choice);
     if (choice === "up") up();
   }
 
@@ -312,6 +392,23 @@ export default function Root() {
           </div>
         )}
       </section>
+
+      {confirm && (
+        <ConfirmRemove
+          removal={confirm.removal}
+          mode={confirm.mode}
+          busy={confirm.busy}
+          error={confirm.error}
+          onMode={(mode) => setConfirm({ ...confirm, mode, error: null })}
+          onConfirm={remove}
+          onCancel={() => setConfirm(null)}
+        />
+      )}
+      {notice && (
+        <p className="notice" role="status">
+          {notice}
+        </p>
+      )}
 
       <footer className="rack">
         <ul className="legend" aria-label="What the space is">

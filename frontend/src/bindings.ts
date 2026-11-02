@@ -77,6 +77,25 @@ export interface Item {
 
 export type Kind = "folder" | "file" | "link" | "mount" | "other" | "rest";
 
+export interface Removal {
+  node: number;
+  name: string;
+  path: string;
+  size: number;
+  files: number;
+  folder: boolean;
+  refused: string | null;
+  warning: string | null;
+  generation: number;
+}
+
+export type Mode = "trash" | "permanent";
+
+export interface Removed {
+  size: number;
+  files: number;
+}
+
 export interface Progress {
   files: number;
   folders: number;
@@ -95,6 +114,8 @@ export interface AppErrors {
   cancelScan: never;
   view: "OutOfMemory" | "NoScan" | "NotAFolder";
   hover: "OutOfMemory";
+  removal: "OutOfMemory" | "NoScan" | "NotFound";
+  remove: "AccessDenied" | "OutOfMemory" | "NoScan" | "NotFound" | "InUse" | "TrashUnavailable" | "Failed" | "Refused" | "Stale";
 }
 
 export interface AppBindings {
@@ -112,6 +133,10 @@ export interface AppBindings {
   view(arg1: number, arg2: number, arg3: number, arg4: number, arg5: number, arg6: number): View;
   /** Fails with PlumeError<AppErrors["hover"]>. */
   hover(arg1: number, arg2: number): Item | null;
+  /** Fails with PlumeError<AppErrors["removal"]>. */
+  removal(arg1: number): Removal;
+  /** Fails with PlumeError<AppErrors["remove"]>. */
+  remove(arg1: number, arg2: number, arg3: Mode): Promise<Removed>;
 }
 
 // The page runtime: the window, dialogs, clipboard, screens and menus.
@@ -288,5 +313,11 @@ export const App: AppBindings = {
   },
   hover(arg1, arg2) {
     try { return native.hover(arg1, arg2); } catch (error) { throw plumeError(error); }
+  },
+  removal(arg1) {
+    try { return native.removal(arg1); } catch (error) { throw plumeError(error); }
+  },
+  remove(arg1, arg2, arg3) {
+    return native.remove(arg1, arg2, arg3).catch((error: unknown) => { throw plumeError(error); });
   },
 };

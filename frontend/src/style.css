@@ -609,6 +609,112 @@
   }
 }
 
+@layer components {
+  /* Asking before deleting: over everything, the rest dimmed. */
+  .veil {
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+    display: grid;
+    place-items: center;
+    background: rgb(6 10 14 / 0.62);
+    backdrop-filter: blur(3px);
+  }
+
+  .dialog {
+    width: min(34rem, calc(100vw - 3rem));
+    border: 1px solid #2a394a;
+    border-radius: 12px;
+    background: var(--plate);
+    padding: 1.4rem 1.5rem 1.2rem;
+    box-shadow: 0 24px 60px rgb(0 0 0 / 0.5);
+  }
+
+  .dialog[data-mode="permanent"] {
+    border-color: color-mix(in oklab, var(--clip) 55%, #2a394a);
+  }
+
+  .dialog-title {
+    font-size: 1.35rem;
+    font-weight: 760;
+    font-stretch: 112%;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+  }
+
+  .dialog-size {
+    margin-top: 0.5rem;
+    font-size: 1.05rem;
+    font-weight: 650;
+  }
+
+  .dialog-path {
+    margin-top: 0.2rem;
+    color: var(--quiet);
+    font-size: 0.86rem;
+    overflow-wrap: anywhere;
+    user-select: text;
+  }
+
+  .dialog-warning {
+    margin-top: 0.9rem;
+    border-left: 3px solid var(--clip);
+    background: color-mix(in oklab, var(--clip) 9%, transparent);
+    padding: 0.55rem 0.75rem;
+    font-size: 0.92rem;
+  }
+
+  .dialog-note {
+    margin-top: 0.9rem;
+    color: #a3b1c2;
+    font-size: 0.92rem;
+  }
+
+  .dialog-error {
+    margin-top: 0.7rem;
+    color: var(--clip);
+    font-size: 0.92rem;
+  }
+
+  .dialog-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 1.3rem;
+  }
+
+  .dialog-switch {
+    margin-right: auto;
+  }
+
+  .control-danger {
+    border-color: transparent;
+    background: var(--clip);
+    color: #ffffff;
+  }
+
+  .control-danger:hover {
+    background: color-mix(in oklab, var(--clip) 88%, #ffffff);
+  }
+
+  /* What just happened (deleted, refused): above the rack, a while. */
+  .notice {
+    position: fixed;
+    left: 50%;
+    bottom: 3.6rem;
+    z-index: 5;
+    transform: translateX(-50%);
+    max-width: min(44rem, calc(100vw - 3rem));
+    border: 1px solid #2a394a;
+    border-radius: 8px;
+    background: rgb(17 26 36 / 0.96);
+    padding: 0.55rem 0.9rem;
+    font-size: 0.92rem;
+    box-shadow: 0 10px 30px rgb(0 0 0 / 0.4);
+    pointer-events: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .segment,
   .labels {

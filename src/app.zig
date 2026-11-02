@@ -10,9 +10,10 @@ const categories = @import("categories.zig");
 const volume = @import("volume.zig");
 const map_layer = @import("map.zig");
 const elevate = @import("elevate.zig");
+const removing = @import("remove.zig");
 
 pub const App = struct {
-    pub const async_methods = .{"scan"};
+    pub const async_methods = .{ "scan", "remove" };
 
     pub const Events = struct {
         progress: Progress,
@@ -71,6 +72,25 @@ pub const App = struct {
         opens: bool,
     };
 
+    /// What deleting an item means, asked before it is deleted.
+    pub const Removal = struct {
+        node: u32,
+        name: []const u8,
+        path: []const u8,
+        size: u64,
+        files: u64,
+        folder: bool,
+        /// Why it cannot be deleted; null if it can.
+        refused: ?[]const u8,
+        /// What deleting it breaks that is easy to miss.
+        warning: ?[]const u8,
+        /// The generation of the scan it is from: remove() refuses an item
+        /// of an older scan.
+        generation: u32,
+    };
+
+    pub const Removed = struct { size: u64, files: u64 };
+
     io: std.Io,
     home_path: []const u8,
     map: *map_layer.Map,
@@ -89,6 +109,8 @@ pub const App = struct {
     legend_sizes: [categories.count]u64 = @splat(0),
     cancel: std.atomic.Value(bool) = .init(false),
     scanning: std.atomic.Value(bool) = .init(false),
+    /// Counts scans: what a removal was asked about must still be there.
+    generation: u32 = 0,
 
     const gpa = std.heap.smp_allocator;
 
@@ -174,6 +196,7 @@ pub const App = struct {
         self.layout = null;
         if (self.tree) |*t| t.deinit(gpa);
         self.tree = tree;
+        self.generation +%= 1;
         self.root = scanner.Tree.root_index;
         self.legend_root = null;
         self.map.clear();
@@ -297,6 +320,67 @@ pub const App = struct {
             .unreadable = n.unreadable,
             .opens = item.shape != .rest and n.kind == .directory and n.child_count > 0 and item.node != self.root,
         };
+    }
+
+    /// What deleting `node` means: refused (and why), warned about, or fine.
+    pub fn removal(self: *App, allocator: std.mem.Allocator, node: u32) error{ NoScan, NotFound, OutOfMemory }!Removal {
+        self.lock.lockUncancelable(self.io);
+        defer self.lock.unlock(self.io);
+        const tree = &(self.tree orelse return error.NoScan);
+        if (node >= tree.nodes.items.len) return error.NotFound;
+        const n = tree.node(node);
+        const path = try tree.path(allocator, node);
+        return .{
+            .node = node,
+            .name = try allocator.dupe(u8, if (node == 0) tree.root else tree.name(node)),
+            .path = path,
+            .size = n.size,
+            .files = n.files,
+            .folder = n.kind == .directory,
+            .refused = removing.refusal(path, self.home_path, tree.root),
+            .warning = removing.warning(path),
+            .generation = self.generation,
+        };
+    }
+
+    /// Deletes `node` (to the Recycle Bin or the Trash, or for good), on a
+    /// worker thread, then takes it out of the tree: the folders above it
+    /// shrink, nothing is scanned again. view() shows the change.
+    pub fn remove(self: *App, node: u32, generation: u32, mode: removing.Mode) (removing.Error || error{ NoScan, Refused, Stale })!Removed {
+        const path = blk: {
+            self.lock.lockUncancelable(self.io);
+            defer self.lock.unlock(self.io);
+            const tree = &(self.tree orelse return error.NoScan);
+            if (generation != self.generation or node >= tree.nodes.items.len) return error.Stale;
+            const path = try tree.path(gpa, node);
+            if (removing.refusal(path, self.home_path, tree.root) != null) {
+                gpa.free(path);
+                return error.Refused;
+            }
+            break :blk path;
+        };
+        defer gpa.free(path);
+
+        try removing.remove(gpa, self.io, path, mode, self.home_path);
+
+        self.lock.lockUncancelable(self.io);
+        defer self.lock.unlock(self.io);
+        const tree = &(self.tree orelse return error.NoScan);
+        if (generation != self.generation) return .{ .size = 0, .files = 0 };
+        const n = &tree.nodes.items[node];
+        const removed: Removed = .{ .size = n.size, .files = n.files };
+        n.size = 0;
+        n.files = 0;
+        n.child_count = 0;
+        var at = n.parent;
+        while (true) : (at = tree.nodes.items[at].parent) {
+            const parent = &tree.nodes.items[at];
+            parent.size -|= removed.size;
+            parent.files -|= removed.files;
+            if (at == 0) break;
+        }
+        self.legend_root = null;
+        return removed;
     }
 
     /// The categories under `node`, biggest first (cached for the last one).
