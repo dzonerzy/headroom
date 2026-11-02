@@ -22,7 +22,9 @@ Docker's and WSL's disks), says how safe each is to clear, and clears it.
 - **Scans fast.** A home folder of 6.5 million files in about ten seconds on
   Windows, the whole disk in fifteen; `/usr` in a third of a second on Linux.
   Sizes are what files take on the disk. Links are not followed, other disks
-  mounted inside are not entered, hard links count once on Linux.
+  mounted inside are not entered, hard links count once on Linux. Run as
+  administrator on Windows, it reads the disk's file table (NTFS's MFT) in one
+  pass instead: nothing it cannot see, and hard links counted once there too.
 - **Draws it all.** A nested treemap drawn by the GPU, every folder that has
   room opened inside its frame; zooms into a folder and back out. Or the same
   folder as a list, for the keyboard and screen readers.
