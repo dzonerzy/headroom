@@ -87,6 +87,12 @@ pub const App = struct {
 
     const gpa = std.heap.smp_allocator;
 
+    /// The app is ending: a scan still running stops now (app.deinit waits
+    /// for it, and a whole disk takes minutes).
+    pub fn stop(self: *App) void {
+        self.cancelScan();
+    }
+
     pub fn deinit(self: *App) void {
         if (self.layout) |*l| l.deinit(gpa);
         if (self.tree) |*t| t.deinit(gpa);
@@ -103,12 +109,23 @@ pub const App = struct {
         return volume.space(gpa, path);
     }
 
+    /// The intro on the map (no treemap yet: the start, a scan running, a
+    /// failed one), in the map's area as for view().
+    pub fn intro(self: *App, x: f32, y: f32, width: f32, height: f32, scale: f32) void {
+        self.map.showIntro(.{ .x = x, .y = y, .w = width, .h = height }, scale);
+        if (!self.scanning.load(.acquire)) self.map.setActivity(idle_detail, 1);
+    }
+
+    const idle_detail = 9;
+
     /// Everything under `path`, on a worker thread: "progress" events while
-    /// it runs. Then view(0, ...) shows it.
+    /// it runs (the intro deepens as files come). Then view(0, ...) shows it.
     pub fn scan(self: *App, allocator: std.mem.Allocator, path: []const u8) (scanner.Error || error{Busy})!Scanned {
         if (self.scanning.swap(true, .acq_rel)) return error.Busy;
         defer self.scanning.store(false, .release);
         self.cancel.store(false, .monotonic);
+        self.map.setActivity(4, 2.6);
+        defer self.map.setActivity(idle_detail, 1);
 
         const start = std.Io.Clock.awake.now(self.io);
         var tree = try scanner.scan(gpa, self.io, path, .{
@@ -140,6 +157,9 @@ pub const App = struct {
 
     fn report(context: *anyopaque, progress: scanner.Progress) void {
         const self: *App = @ptrCast(@alignCast(context));
+        // A level deeper for every tenfold of files: 1,000 files 7, a million 10.
+        const files: f32 = @floatFromInt(progress.files + 1);
+        self.map.setActivity(std.math.clamp(4 + std.math.log10(files), 4, 11), 2.6);
         if (self.events) |events| events.emit(.progress, .{
             .files = progress.files,
             .folders = progress.directories,

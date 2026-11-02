@@ -79,10 +79,18 @@ export default function Root() {
     if (path) await scan(path);
   }
 
-  // Once a scan is done, its folder on the map.
+  /** The living intro on the map, while there is no treemap to show. */
+  const intro = useCallback(() => {
+    const area = map.current?.getBoundingClientRect();
+    if (area && area.width >= 1 && area.height >= 1)
+      App.intro(area.left, area.top, area.width, area.height, window.devicePixelRatio || 1);
+  }, []);
+
+  // Once a scan is done, its folder on the map; until then, the intro.
   useLayoutEffect(() => {
     if (phase.name === "ready") show(0);
-  }, [phase, show]);
+    else intro();
+  }, [phase, show, intro]);
 
   // The map follows the window's size.
   useEffect(() => {
@@ -93,11 +101,12 @@ export default function Root() {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
         if (shown.current !== null) show(shown.current);
+        else intro();
       });
     });
     observer.observe(element);
     return () => observer.disconnect();
-  }, [show]);
+  }, [show, intro]);
 
   const up = useCallback(() => {
     if (view && view.crumbs.length > 1) show(view.crumbs[view.crumbs.length - 2].node);
@@ -219,26 +228,34 @@ export default function Root() {
         {hovered && labelsShown && <Tooltip item={hovered} />}
 
         {phase.name === "start" && (
-          <div className="stage">
-            <h2 className="stage-title">See what fills your disk</h2>
+          <div className="stage stage-intro">
+            <h2 className="stage-title stage-title-large">See what fills your disk</h2>
             <p className="stage-text">
               Headroom reads every file in a folder and draws them by the space they take. Open folders to go deeper.
             </p>
             <div className="stage-actions">
               {home.current && (
-                <button className="control control-main" onClick={() => scan(home.current)}>
-                  Scan {home.current}
+                <button className="control control-main control-large" onClick={() => scan(home.current)}>
+                  Scan your home folder
                 </button>
               )}
-              <button className="control" onClick={choose}>
-                Choose folder
+              <button className="control control-large" onClick={() => scan(driveOf(home.current))}>
+                Scan the whole disk
+              </button>
+              <button className="control control-large control-quiet" onClick={choose}>
+                Choose a folder
               </button>
             </div>
+            {home.current && (
+              <p className="stage-note">
+                Your home folder is <span className="stage-path">{home.current}</span>. Nothing is changed or deleted.
+              </p>
+            )}
           </div>
         )}
 
         {phase.name === "scanning" && (
-          <div className="stage">
+          <div className="stage stage-intro">
             <p className="count">{exact(phase.progress?.files ?? 0)}</p>
             <p className="stage-text">
               files read in {compact(phase.progress?.folders ?? 0)}{" "}
@@ -253,7 +270,7 @@ export default function Root() {
         )}
 
         {phase.name === "failed" && (
-          <div className="stage">
+          <div className="stage stage-intro">
             <h2 className="stage-title">{phase.path} was not scanned</h2>
             <p className="stage-text">{phase.message}</p>
             <div className="stage-actions">
@@ -335,6 +352,12 @@ function Tooltip({ item }: { item: Item & { x: number; y: number } }) {
       {item.opens && <p className="tooltip-hint">Click to open</p>}
     </div>
   );
+}
+
+/** The disk a path is on: "C:\" for "C:\Users\ada", "/" on Linux. */
+function driveOf(path: string): string {
+  const drive = /^[A-Za-z]:[\\/]/.exec(path);
+  return drive ? `${path.slice(0, 2)}\\` : "/";
 }
 
 /** The folder a file or the rest is in. */

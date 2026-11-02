@@ -43,6 +43,14 @@ pub const Map = struct {
     zoom_from: [4]f32 = .{ 1, 1, 0, 0 },
     zoom_start: f64 = 0,
     zoom_pending: bool = false,
+    /// Before a treemap (the start, a scan running): a treemap that is not
+    /// one, drawn by the shader alone, breathing; `detail` levels deep, its
+    /// clock `energy` times as fast.
+    intro: bool = false,
+    detail: f32 = 5,
+    energy: f32 = 1,
+    clock: f64 = 0,
+    last_ms: f64 = 0,
     /// The compositor thread's.
     gpu: ?Gpu = null,
 
@@ -62,6 +70,13 @@ pub const Map = struct {
         u_transform: gl.Int,
         u_header: gl.Int,
         u_hovered: gl.Int,
+        intro: gl.Uint,
+        i_size: gl.Int,
+        i_viewport: gl.Int,
+        i_scale: gl.Int,
+        i_time: gl.Int,
+        i_detail: gl.Int,
+        i_energy: gl.Int,
     };
 
     const Extra = struct {
@@ -83,6 +98,7 @@ pub const Map = struct {
         for (layout.items.items) |item| map.instances.appendAssumeCapacity(instance(item));
         map.version += 1;
         map.hovered = -1;
+        map.intro = false;
         if (zoom) |from| {
             map.zoom_from = from;
             map.zoom_pending = true;
@@ -96,6 +112,28 @@ pub const Map = struct {
         map.viewport = viewport;
         map.scale = scale;
         map.redraw();
+    }
+
+    /// The intro in `viewport` (the treemap shown before goes).
+    pub fn showIntro(map: *Map, viewport: treemap.Rect, scale: f32) void {
+        map.lock.lockUncancelable(map.io);
+        defer map.lock.unlock(map.io);
+        map.viewport = viewport;
+        map.scale = scale;
+        if (!map.intro) {
+            map.instances.clearRetainingCapacity();
+            map.version += 1;
+            map.intro = true;
+        }
+        map.redraw();
+    }
+
+    /// How deep and how fast the intro is (a scan: deeper as files come).
+    pub fn setActivity(map: *Map, detail: f32, energy: f32) void {
+        map.lock.lockUncancelable(map.io);
+        defer map.lock.unlock(map.io);
+        map.detail = detail;
+        map.energy = energy;
     }
 
     pub fn hover(map: *Map, index: ?usize) void {
@@ -154,9 +192,15 @@ pub const Map = struct {
         const viewport = map.viewport;
         const scale = map.scale;
         const hovered = if (zooming) -1 else map.hovered;
+        const intro = map.intro;
+        // The intro's own clock, faster while a scan runs.
+        if (map.last_ms != 0) map.clock += (frame.time_ms - map.last_ms) / 1000.0 * map.energy;
+        map.last_ms = frame.time_ms;
+        const clock = map.clock;
+        const detail = map.detail;
+        const energy = map.energy;
         map.lock.unlock(map.io);
 
-        if (g.count == 0) return;
         const height: f32 = @floatFromInt(frame.height);
         c.glEnable(SCISSOR_TEST);
         g.extra.glScissor(
@@ -165,6 +209,25 @@ pub const Map = struct {
             @intFromFloat(viewport.w * scale),
             @intFromFloat(viewport.h * scale),
         );
+        if (intro) {
+            c.glUseProgram(g.intro);
+            c.glUniform2f(g.i_size, @floatFromInt(frame.width), height);
+            c.glUniform4f(g.i_viewport, viewport.x, viewport.y, viewport.w, viewport.h);
+            c.glUniform1f(g.i_scale, scale);
+            c.glUniform1f(g.i_time, @floatCast(clock));
+            c.glUniform1f(g.i_detail, detail);
+            c.glUniform1f(g.i_energy, energy);
+            c.glBindVertexArray(0);
+            c.glDrawArrays(gl.TRIANGLES, 0, 3);
+            c.glDisable(SCISSOR_TEST);
+            // Alive: the next frame.
+            map.redraw();
+            return;
+        }
+        if (g.count == 0) {
+            c.glDisable(SCISSOR_TEST);
+            return;
+        }
         c.glUseProgram(g.program);
         c.glUniform2f(g.u_size, @floatFromInt(frame.width), height);
         c.glUniform4f(g.u_viewport, viewport.x, viewport.y, viewport.w, viewport.h);
@@ -184,6 +247,7 @@ pub const Map = struct {
         const core = gl.load(gl.Core) catch return null;
         const extra = gl.load(Extra) catch return null;
         const program = gl.program(core, vertex_source, fragment_source) orelse return null;
+        const intro = gl.program(core, intro_vertex_source, intro_fragment_source) orelse return null;
         var buffer: gl.Uint = 0;
         core.glGenBuffers(1, @ptrCast(&buffer));
         var array: gl.Uint = 0;
@@ -211,6 +275,13 @@ pub const Map = struct {
             .u_transform = core.glGetUniformLocation(program, "transform"),
             .u_header = core.glGetUniformLocation(program, "header"),
             .u_hovered = core.glGetUniformLocation(program, "hovered"),
+            .intro = intro,
+            .i_size = core.glGetUniformLocation(intro, "size"),
+            .i_viewport = core.glGetUniformLocation(intro, "viewport"),
+            .i_scale = core.glGetUniformLocation(intro, "scale"),
+            .i_time = core.glGetUniformLocation(intro, "time"),
+            .i_detail = core.glGetUniformLocation(intro, "detail"),
+            .i_energy = core.glGetUniformLocation(intro, "energy"),
         };
         return &map.gpu.?;
     }
@@ -269,6 +340,98 @@ fn rgb(color: u24) [3]f32 {
         @as(f32, @floatFromInt(color & 0xff)) / 255,
     };
 }
+
+/// One triangle over the window: the intro is all fragment shader.
+const intro_vertex_source =
+    \\#version 300 es
+    \\void main() {
+    \\  vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
+    \\  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+    \\}
+;
+
+/// A treemap that is not one: every pixel walks a tree of splits whose
+/// ratios drift with time, so tiles breathe and slide into each other. The
+/// first levels are folder frames with header strips, the leaves cushions
+/// in the legend's colors (half of them the quiet slate), as the real map
+/// draws them. A band of light sweeps across, like a signal on a meter.
+const intro_fragment_source =
+    \\#version 300 es
+    \\precision highp float;
+    \\uniform vec2 size;
+    \\uniform vec4 viewport;
+    \\uniform float scale;
+    \\uniform float time;
+    \\uniform float detail;
+    \\uniform float energy;
+    \\out vec4 color;
+    \\const vec3 palette[7] = vec3[7](
+    \\  vec3(0.357, 0.553, 0.937), vec3(0.816, 0.541, 0.235), vec3(0.839, 0.353, 0.373),
+    \\  vec3(0.608, 0.435, 0.863), vec3(0.247, 0.714, 0.561), vec3(0.851, 0.761, 0.361),
+    \\  vec3(0.310, 0.706, 0.788));
+    \\const vec3 slate = vec3(0.271, 0.337, 0.420);
+    \\float hash(float n) { return fract(sin(n * 91.3458) * 47453.5453); }
+    \\void main() {
+    \\  vec2 p = vec2(gl_FragCoord.x, size.y - gl_FragCoord.y) / scale - viewport.xy;
+    \\  vec2 lo = vec2(0.0), hi = viewport.zw;
+    \\  float id = 1.0;
+    \\  int levels = int(detail);
+    \\  int frameAt = -1;
+    \\  bool header = false;
+    \\  for (int i = 0; i < 12; i++) {
+    \\    if (i >= levels) break;
+    \\    vec2 s = hi - lo;
+    \\    if (s.x < 16.0 || s.y < 16.0) break;
+    \\    // Some branches end early: a few big tiles among many small ones.
+    \\    if (i >= 4 && hash(id + 17.0) < 0.16) break;
+    \\    if (i > 0 && i < 4) {
+    \\      // A folder: header strip and rim, its contents inside.
+    \\      float head = (s.y > 80.0 && s.x > 70.0) ? 18.0 : 0.0;
+    \\      vec2 ilo = lo + vec2(3.0, 3.0 + head), ihi = hi - vec2(3.0);
+    \\      if (p.x < ilo.x || p.y < ilo.y || p.x > ihi.x || p.y > ihi.y) {
+    \\        frameAt = i;
+    \\        header = head > 0.0 && p.y < lo.y + head && p.x > ilo.x && p.x < ihi.x;
+    \\        break;
+    \\      }
+    \\      lo = ilo; hi = ihi;
+    \\    }
+    \\    float h = hash(id);
+    \\    float r = 0.5 + 0.3 * sin(time * (0.045 + 0.08 * h) + h * 6.2831);
+    \\    bool vertical = (hi.x - lo.x) > (hi.y - lo.y) * (0.8 + 0.4 * h);
+    \\    float cut = vertical ? mix(lo.x, hi.x, r) : mix(lo.y, hi.y, r);
+    \\    float side = vertical ? step(cut, p.x) : step(cut, p.y);
+    \\    if (vertical) { if (side > 0.5) lo.x = cut; else hi.x = cut; }
+    \\    else { if (side > 0.5) lo.y = cut; else hi.y = cut; }
+    \\    id = id * 2.0 + side;
+    \\  }
+    \\  vec3 c;
+    \\  if (frameAt >= 0) {
+    \\    c = mix(vec3(0.086, 0.125, 0.169), vec3(0.204, 0.275, 0.357), float(frameAt) * 0.13);
+    \\    if (header) c = mix(c, vec3(0.62, 0.72, 0.84), 0.2);
+    \\    vec2 d = min(p - lo, hi - p);
+    \\    if (min(d.x, d.y) < 1.0) c *= 0.55;
+    \\  } else {
+    \\    vec2 dims = max(hi - lo, vec2(1.0));
+    \\    vec2 q = (p - lo) / dims * 2.0 - 1.0;
+    \\    float pick = hash(id * 1.618 + 4.0);
+    \\    vec3 base = pick < 0.5 ? slate : palette[int(hash(id * 7.31) * 7.0) % 7];
+    \\    float bump = (1.0 - 0.6 * q.x * q.x) * (1.0 - 0.6 * q.y * q.y);
+    \\    c = base * (0.42 + 0.62 * bump - 0.16 * (q.x * 0.5 + q.y * 0.85));
+    \\    vec2 d = min(p - lo, hi - p);
+    \\    if (min(d.x, d.y) < 0.75) c *= 0.32;
+    \\  }
+    \\  // The sweep: a soft diagonal band of light crossing the map.
+    \\  float span = viewport.z + viewport.w;
+    \\  float band = (p.x + p.y * 0.6) / span - fract(time * 0.035 * (energy > 1.5 ? 2.5 : 1.0)) * 1.6 + 0.3;
+    \\  float glow = exp(-band * band * 40.0);
+    \\  c *= 0.66 + 0.6 * glow;
+    \\  // Dimmer where the words are (the left), darker at the edges.
+    \\  vec2 uv = p / viewport.zw;
+    \\  c *= mix(0.55, 1.0, smoothstep(0.15, 0.75, uv.x));
+    \\  c *= 1.0 - 0.35 * pow(length(uv - 0.5) * 1.2, 2.0);
+    \\  color = vec4(c, 1.0);
+    \\}
+;
 
 /// A unit quad per instance (triangle strip), placed in the map and zoomed.
 const vertex_source =

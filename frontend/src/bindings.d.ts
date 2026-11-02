@@ -77,6 +77,7 @@ interface Progress {
 interface AppErrors {
   home: never;
   space: never;
+  intro: never;
   scan: "AccessDenied" | "Canceled" | "OutOfMemory" | "FileNotFound" | "NotDir" | "Busy";
   cancelScan: never;
   view: "OutOfMemory" | "NoScan" | "NotAFolder";
@@ -86,6 +87,7 @@ interface AppErrors {
 interface AppBindings {
   home(): string;
   space(arg1: string): Space | null;
+  intro(arg1: number, arg2: number, arg3: number, arg4: number, arg5: number): void;
   /** Fails with PlumeError<AppErrors["scan"]>. */
   scan(arg1: string): Promise<Scanned>;
   cancelScan(): void;

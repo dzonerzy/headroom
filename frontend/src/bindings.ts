@@ -87,6 +87,7 @@ export interface Progress {
 export interface AppErrors {
   home: never;
   space: never;
+  intro: never;
   scan: "AccessDenied" | "Canceled" | "OutOfMemory" | "FileNotFound" | "NotDir" | "Busy";
   cancelScan: never;
   view: "OutOfMemory" | "NoScan" | "NotAFolder";
@@ -96,6 +97,7 @@ export interface AppErrors {
 export interface AppBindings {
   home(): string;
   space(arg1: string): Space | null;
+  intro(arg1: number, arg2: number, arg3: number, arg4: number, arg5: number): void;
   /** Fails with PlumeError<AppErrors["scan"]>. */
   scan(arg1: string): Promise<Scanned>;
   cancelScan(): void;
@@ -255,6 +257,9 @@ export const App: AppBindings = {
   },
   space(arg1) {
     try { return native.space(arg1); } catch (error) { throw plumeError(error); }
+  },
+  intro(arg1, arg2, arg3, arg4, arg5) {
+    try { return native.intro(arg1, arg2, arg3, arg4, arg5); } catch (error) { throw plumeError(error); }
   },
   scan(arg1) {
     return native.scan(arg1).catch((error: unknown) => { throw plumeError(error); });

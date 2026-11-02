@@ -5,8 +5,8 @@
     .minimum_zig_version = "0.17.0",
     .dependencies = .{
         .plume = .{
-            .url = "git+https://github.com/dzonerzy/plume#f5808ca1b0186b16c2bf343777c4528d1077bcbc",
-            .hash = "plume-0.2.0-n-MsrfQcBwAlvWo9v4mbzZFypOlmwjykzMTUOsXQRE95",
+            .url = "git+https://github.com/dzonerzy/plume#87391fac50d7e9dc14f2ae765e3ef5006210b0d6",
+            .hash = "plume-0.2.0-n-MsrXghBwDDTdCLHIhXlKWlEgi83W6ZDUGngQbKTVB8",
         },
     },
     .paths = .{ "build.zig", "build.zig.zon", "src", "plume.json" },

@@ -378,6 +378,63 @@
     transform: translate(-50%, -55%);
   }
 
+  /* Over the intro: on its dimmed left, a shade behind the words. */
+  .stage-intro {
+    left: clamp(1.5rem, 7vw, 6rem);
+    width: min(40rem, calc(100% - 3rem));
+    transform: translateY(-50%);
+  }
+
+  .stage-intro::before {
+    content: "";
+    position: absolute;
+    inset: -6rem -10rem -6rem -12rem;
+    z-index: -1;
+    background: radial-gradient(ellipse at 35% 50%, rgb(13 20 28 / 0.86), rgb(13 20 28 / 0.55) 45%, transparent 72%);
+    pointer-events: none;
+  }
+
+  .stage-title.stage-title-large {
+    font-size: clamp(2.6rem, 5.2vw, 4.4rem);
+    font-weight: 800;
+    font-stretch: 125%;
+    line-height: 0.98;
+    letter-spacing: -0.03em;
+    max-width: 11ch;
+  }
+
+  .stage-intro .stage-text {
+    margin-top: 1.1rem;
+    font-size: 1.12rem;
+    color: #a3b1c2;
+  }
+
+  .control-large {
+    padding: 0.65rem 1.15rem;
+    font-size: 1rem;
+  }
+
+  .control-quiet {
+    border-color: transparent;
+    background: transparent;
+    color: var(--quiet);
+  }
+
+  .control-quiet:hover {
+    background: rgb(255 255 255 / 0.05);
+    color: var(--ink);
+  }
+
+  .stage-note {
+    margin-top: 1.1rem;
+    color: var(--quiet);
+    font-size: 0.88rem;
+  }
+
+  .stage-path {
+    color: var(--ink);
+  }
+
   .stage-title {
     font-size: 1.85rem;
     font-weight: 720;
