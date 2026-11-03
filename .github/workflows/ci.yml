@@ -87,9 +87,10 @@ jobs:
           PLUME_UPDATE_KEY: ${{ secrets.PLUME_UPDATE_KEY }}
         run: |
           plume package --skip-build
-          # The packages only: plume 0.2.1 leaves its staging folders there.
+          # The packages only: plume 0.2.1 leaves its staging folders and the
+          # NSIS script there.
           mkdir -p release
-          find build/package -maxdepth 1 -type f -exec cp {} release/ \;
+          find build/package -maxdepth 1 -type f ! -name '*.nsi' -exec cp {} release/ \;
           ls -la release
       - uses: actions/upload-artifact@v4
         if: startsWith(github.ref, 'refs/tags/v')
