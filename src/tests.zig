@@ -7,6 +7,7 @@ const std = @import("std");
 const plume = @import("plume");
 const App = @import("app.zig").App;
 const Map = @import("map.zig").Map;
+const scan = @import("scan.zig");
 
 test {
     _ = @import("scan.zig");
@@ -20,6 +21,7 @@ test {
     _ = @import("snapshot.zig");
     _ = @import("disks.zig");
     _ = @import("ntfs.zig");
+    _ = @import("projects.zig");
 }
 
 fn write(dir: std.Io.Dir, path: []const u8, bytes: usize) !void {
@@ -85,6 +87,60 @@ test "what can go: found, listed, deleted" {
     try tmp.dir.access(std.testing.io, "web/package.json", .{});
     try h.waitUntil("document.querySelectorAll('.reclaim-group').length === 1");
     try h.waitUntil("document.querySelector('.notice')?.textContent.startsWith('Deleted 1 place') === true");
+}
+
+test "old projects: the untouched one listed and cleared, the recent one not" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    // shop: untouched for 200 days, its node_modules rebuilt lately (not a
+    // touch); blog: written today.
+    try write(tmp.dir, "shop/package.json", 2_000);
+    try write(tmp.dir, "shop/src/app.js", 30_000);
+    try write(tmp.dir, "shop/node_modules/react/index.js", 600_000);
+    try write(tmp.dir, "blog/package.json", 2_000);
+    try write(tmp.dir, "blog/node_modules/vite/bin.js", 300_000);
+    const io = std.testing.io;
+    const long_ago = @divFloor(std.Io.Clock.real.now(io).toMilliseconds(), 1000) - 200 * 24 * 3600;
+    try scan.setMtime(tmp.dir, io, "shop/package.json", long_ago);
+    try scan.setMtime(tmp.dir, io, "shop/src/app.js", long_ago);
+    const root = try tmp.dir.realPathFileAlloc(io, ".", std.testing.allocator);
+    defer std.testing.allocator.free(root);
+
+    const h = try plume.testing.Harness.startProject(@import("plume_project"), .{ .width = 1200, .height = 780 });
+    defer h.stop();
+    var map: Map = .{ .window = null, .io = io };
+    defer map.deinit(std.heap.smp_allocator);
+    var state: App = .{ .io = io, .home_path = root, .map = &map, .mft = false };
+    defer state.deinit();
+    state.events = h.app.events(App.Events);
+    try h.app.bind("App", App, &state);
+    try h.open();
+
+    try h.click(".stage .control-main");
+    try h.waitFor(".control-stale");
+    try std.testing.expect(std.mem.endsWith(u8, try h.text(".control-stale"), "in old projects"));
+    try h.click(".control-stale");
+    try h.waitFor(".stale-project");
+    try std.testing.expectEqual(@as(u32, 1), try h.evaluate(u32, "document.querySelectorAll('.stale-project').length"));
+    try h.expectText(".stale-project .reclaim-title", "shop");
+    try std.testing.expect(std.mem.indexOf(u8, try h.text(".stale-project .reclaim-why"), "months ago") != null);
+    try shot(h, "stale");
+
+    // A year: shop is not that old.
+    try h.click(".stale-age:nth-of-type(3)");
+    try h.waitUntil("document.querySelectorAll('.stale-project').length === 0");
+    try h.click(".stale-age:nth-of-type(1)");
+    try h.waitFor(".stale-project");
+
+    // Cleared, for good: its node_modules gone, its code kept.
+    try h.click(".stale-project .reclaim-do");
+    try h.waitFor(".dialog");
+    try h.click(".control-danger");
+    try h.waitUntil("document.querySelector('.veil') === null");
+    try std.testing.expectError(error.FileNotFound, tmp.dir.access(io, "shop/node_modules", .{}));
+    try tmp.dir.access(io, "shop/src/app.js", .{});
+    try tmp.dir.access(io, "blog/node_modules/vite/bin.js", .{});
+    try h.waitUntil("document.querySelectorAll('.stale-project').length === 0");
 }
 
 test "what changed since the last scan" {

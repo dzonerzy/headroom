@@ -47,3 +47,14 @@ export function share(fraction: number): string {
 export function plural(n: number, one: string, many: string): string {
   return n === 1 ? one : many;
 }
+
+/** How long ago `unixSeconds` was: "3 days ago", "5 months ago", "2 years ago". */
+export function ago(unixSeconds: number, nowMs: number = Date.now()): string {
+  const days = Math.max(0, Math.floor((nowMs / 1000 - unixSeconds) / 86_400));
+  if (days < 1) return "today";
+  if (days < 60) return `${days} ${plural(days, "day", "days")} ago`;
+  const months = Math.floor(days / 30.44);
+  if (months < 24) return `${months} months ago`;
+  const years = Math.floor(days / 365.25);
+  return `${years} years ago`;
+}

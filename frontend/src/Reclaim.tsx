@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import type { Changed, Group, Moved, Place, Reclaim } from "./bindings";
-import { bytes, bytesParts, exact, plural } from "./format";
+import type { Changed, Group, Moved, Place, Reclaim, Stale, StaleProject } from "./bindings";
+import { ago, bytes, bytesParts, exact, plural } from "./format";
 import { bin } from "./Remove";
 
 const risks = {
@@ -9,14 +9,25 @@ const risks = {
   careful: "Look before clearing",
 } as const;
 
-export type Tab = "reclaim" | "changed";
+export type Tab = "reclaim" | "stale" | "changed";
 
-/** The side panel: what can go, and what changed since the last scan. */
+/** How old a project must be, in days, to be stale: the choices. */
+export const STALE_AGES = [
+  { days: 90, label: "3 months" },
+  { days: 182, label: "6 months" },
+  { days: 365, label: "a year" },
+] as const;
+
+/** The side panel: what can go, old projects, and what changed since the
+ * last scan. */
 export function SidePanel(props: {
   tab: Tab;
   onTab: (tab: Tab) => void;
   onClose: () => void;
   reclaim: Reclaim | null;
+  stale: Stale | null;
+  staleDays: number;
+  onStaleDays: (days: number) => void;
   changed: Changed | null;
   busy: string | null;
   onClean: (group: Group) => void;
@@ -32,6 +43,9 @@ export function SidePanel(props: {
         <button className="side-tab" aria-current={tab === "reclaim" ? "page" : undefined} onClick={() => onTab("reclaim")}>
           Can go
         </button>
+        <button className="side-tab" aria-current={tab === "stale" ? "page" : undefined} onClick={() => onTab("stale")}>
+          Old projects
+        </button>
         <button className="side-tab" aria-current={tab === "changed" ? "page" : undefined} onClick={() => onTab("changed")}>
           Changed
         </button>
@@ -44,6 +58,12 @@ export function SidePanel(props: {
           <ReclaimList {...props} reclaim={props.reclaim} />
         ) : (
           <p className="reclaim-empty">Scan a folder to see what can go.</p>
+        )
+      ) : tab === "stale" ? (
+        props.stale ? (
+          <StaleList {...props} stale={props.stale} />
+        ) : (
+          <p className="reclaim-empty">Scan a folder to see its old projects.</p>
         )
       ) : (
         <ChangesList changed={props.changed} onGoTo={props.onGoTo} />
@@ -115,6 +135,142 @@ function ChangesList({ changed, onGoTo }: { changed: Changed | null; onGoTo: (pa
         {list(changed.grew, "Grew")}
         {list(changed.shrank, "Shrank")}
       </div>
+    </div>
+  );
+}
+
+/** A project's folders (or every stale project's) as a group to clear: the
+ * same confirmation and removal as "Can go". */
+function staleGroup(id: string, title: string, projects: StaleProject[], since: string): Group {
+  const items = projects.flatMap((p) => p.items).sort((a, b) => b.size - a.size);
+  return {
+    id,
+    title,
+    why: `Untouched since ${since}; what their tools make again (dependencies, build output).`,
+    risk: "rebuild",
+    action: "delete",
+    command: null,
+    size: projects.reduce((sum, p) => sum + p.size, 0),
+    count: items.length,
+    items: items.slice(0, 40),
+    nodes: projects.flatMap((p) => p.nodes),
+  };
+}
+
+/** Projects nobody touched for a while that still hold what their tools
+ * make again, biggest first: clear one, or all. */
+function StaleList(props: {
+  stale: Stale;
+  staleDays: number;
+  onStaleDays: (days: number) => void;
+  busy: string | null;
+  onClean: (group: Group) => void;
+  onGo: (place: Place) => void;
+  onHover: (place: Place | null) => void;
+}) {
+  const { stale, staleDays, onStaleDays, busy, onClean, onGo, onHover } = props;
+  const [open, setOpen] = useState<number | null>(null);
+  const [value, unit] = bytesParts(stale.size);
+  const since = new Date(stale.cutoff * 1000).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  const count = stale.projects.length;
+  return (
+    <div className="side-body">
+      <header className="reclaim-head">
+        <div>
+          <p className="figure reclaim-figure">
+            <span className="figure-value">{value}</span>
+            <span className="figure-unit">{unit}</span>
+          </p>
+          <p className="reclaim-caption">
+            in {exact(count)} {plural(count, "project", "projects")} untouched since {since}, made again by a build
+          </p>
+        </div>
+      </header>
+      <div className="stale-ages" role="radiogroup" aria-label="Untouched for">
+        <span className="stale-ages-label">Untouched for</span>
+        {STALE_AGES.map((age) => (
+          <button
+            key={age.days}
+            className="popover-choice stale-age"
+            role="radio"
+            aria-checked={age.days === staleDays}
+            onClick={() => onStaleDays(age.days)}
+          >
+            {age.label}
+          </button>
+        ))}
+      </div>
+      {count === 0 ? (
+        <p className="reclaim-empty">No project here has gone untouched that long with something to clear.</p>
+      ) : (
+        <>
+          {count > 1 && (
+            <div className="reclaim-actions stale-all">
+              <button
+                className="control reclaim-do"
+                disabled={busy === "stale:all"}
+                onClick={() => onClean(staleGroup("stale:all", `old projects' build output (${exact(count)} projects)`, stale.projects, since))}
+              >
+                {busy === "stale:all" ? "Clearing…" : `Clear all ${exact(count)}`}
+              </button>
+            </div>
+          )}
+          <ul className="reclaim-groups">
+            {stale.projects.map((project) => {
+              const id = `stale:${project.node}`;
+              return (
+                <li key={project.node} className="reclaim-group stale-project" data-risk="rebuild">
+                  <div className="reclaim-row">
+                    <span className="led reclaim-led" data-risk="rebuild" aria-hidden="true" />
+                    <span className="reclaim-title" title={project.path}>
+                      {project.name}
+                    </span>
+                    <span className="reclaim-size">{bytes(project.size)}</span>
+                  </div>
+                  <p className="reclaim-why">
+                    <span className="reclaim-risk">Last touched {ago(project.last_touched)}.</span>{" "}
+                    {project.items.map((item) => item.path.split(/[\\/]/).pop()).join(", ")}
+                  </p>
+                  <div className="reclaim-actions">
+                    <button
+                      className="control reclaim-do"
+                      disabled={busy === id}
+                      onClick={() => onClean(staleGroup(id, `${project.name}'s build output`, [project], since))}
+                    >
+                      {busy === id ? "Clearing…" : "Clear it"}
+                    </button>
+                    <button
+                      className="control control-quiet reclaim-more"
+                      aria-expanded={open === project.node}
+                      onClick={() => setOpen(open === project.node ? null : project.node)}
+                    >
+                      {project.items.length === 1 ? "Where" : `${exact(project.items.length)} places`}
+                    </button>
+                  </div>
+                  {open === project.node && (
+                    <ul className="reclaim-places">
+                      {project.items.map((place) => (
+                        <li key={place.node}>
+                          <button
+                            className="reclaim-place"
+                            onClick={() => onGo(place)}
+                            onMouseEnter={() => onHover(place)}
+                            onMouseLeave={() => onHover(null)}
+                            title={place.path}
+                          >
+                            <span className="reclaim-path">{place.path}</span>
+                            <span className="reclaim-place-size">{bytes(place.size)}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      )}
     </div>
   );
 }

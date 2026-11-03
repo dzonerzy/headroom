@@ -1145,6 +1145,11 @@
     min-height: 0;
   }
 
+  .control-stale[aria-pressed="true"],
+  .control-changed[aria-pressed="true"] {
+    background: rgb(255 255 255 / 0.06);
+  }
+
   .control-changed[data-sign="up"] {
     color: #f0b8a8;
   }
@@ -1256,6 +1261,43 @@
     flex: 1;
     overflow-y: auto;
     padding: 0.2rem 0;
+  }
+
+  /* Old projects: how old, then clear them all. */
+  .stale-ages {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    border-bottom: 1px solid var(--rule);
+    padding: 0.6rem 1.1rem;
+    color: var(--quiet);
+    font-size: 0.8rem;
+  }
+
+  .stale-ages-label {
+    margin-right: 0.6rem;
+  }
+
+  .stale-age {
+    border: 1px solid #2a394a;
+  }
+
+  .stale-age + .stale-age {
+    border-left: 0;
+  }
+
+  .stale-age:first-of-type {
+    border-radius: 6px 0 0 6px;
+  }
+
+  .stale-age:last-child {
+    border-radius: 0 6px 6px 0;
+  }
+
+  .stale-all {
+    margin: 0;
+    border-bottom: 1px solid var(--rule);
+    padding: 0.6rem 1.1rem;
   }
 
   .reclaim-group {

@@ -12,6 +12,7 @@ const map_layer = @import("map.zig");
 const elevate = @import("elevate.zig");
 const removing = @import("remove.zig");
 const rules = @import("rules.zig");
+const projects = @import("projects.zig");
 const snapshot = @import("snapshot.zig");
 const disk_list = @import("disks.zig");
 
@@ -164,6 +165,31 @@ pub const App = struct {
         size: u64,
         /// The folder it is in: where the map goes for it.
         parent: u32,
+    };
+
+    /// Projects untouched for a while that still hold what their tools
+    /// make again.
+    pub const Stale = struct {
+        projects: []const StaleProject,
+        /// What can go in all of them.
+        size: u64,
+        /// Untouched since (seconds since 1970).
+        cutoff: i64,
+        generation: u32,
+    };
+
+    pub const StaleProject = struct {
+        node: u32,
+        name: []const u8,
+        /// From the folder scanned.
+        path: []const u8,
+        parent: u32,
+        /// Seconds since 1970.
+        last_touched: i64,
+        size: u64,
+        /// Its folders that can go, largest first.
+        items: []const Place,
+        nodes: []const u32,
     };
 
     io: std.Io,
@@ -588,6 +614,37 @@ pub const App = struct {
         }
         std.mem.sort(Group, groups.items, {}, bySize.group);
         return .{ .size = total, .careful = careful, .groups = groups.items, .generation = self.generation };
+    }
+
+    /// The projects in the last scan untouched for `days` that hold what
+    /// can go, largest first; null before a scan.
+    pub fn stale(self: *App, allocator: std.mem.Allocator, days: u32) error{OutOfMemory}!?Stale {
+        self.lock.lockUncancelable(self.io);
+        defer self.lock.unlock(self.io);
+        const tree = &(self.tree orelse return null);
+        const now = @divFloor(std.Io.Clock.real.now(self.io).toMilliseconds(), 1000);
+        const cutoff = now - @as(i64, days) * 24 * 3600;
+        const found = try projects.stale(allocator, tree, scanner.Tree.root_index, self.finds, cutoff);
+        const list = try allocator.alloc(StaleProject, found.len);
+        var total: u64 = 0;
+        for (found, list) |p, *out| {
+            const items = try allocator.alloc(Place, p.finds.len);
+            for (p.finds, items) |node, *item| {
+                item.* = .{ .node = node, .path = try relative(allocator, tree, node), .size = tree.node(node).size, .parent = tree.node(node).parent };
+            }
+            out.* = .{
+                .node = p.node,
+                .name = tree.name(p.node),
+                .path = try relative(allocator, tree, p.node),
+                .parent = tree.node(p.node).parent,
+                .last_touched = p.last_touched,
+                .size = p.size,
+                .items = items,
+                .nodes = p.finds,
+            };
+            total += p.size;
+        }
+        return .{ .projects = list, .size = total, .cutoff = cutoff, .generation = self.generation };
     }
 
     /// What the rules found shown on the map (the rest dimmed), or not.

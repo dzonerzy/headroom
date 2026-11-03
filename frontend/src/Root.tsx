@@ -6,7 +6,7 @@ import { Mark, Meter } from "./Meter";
 import { bin, ConfirmRemove, type Mode } from "./Remove";
 import { ConfirmGroup, SidePanel, type Tab } from "./Reclaim";
 import { ListView, Search } from "./Find";
-import type { Changed, Group, Place, Reclaim, Removal } from "./bindings";
+import type { Changed, Group, Place, Reclaim, Removal, Stale } from "./bindings";
 
 type Phase =
   | { name: "start" }
@@ -32,6 +32,11 @@ export default function Root() {
   const [notice, setNotice] = useState<string | null>(null);
   const [watching, setWatchingShown] = useState(() => App.watching());
   const [reclaim, setReclaim] = useState<Reclaim | null>(null);
+  const [stale, setStale] = useState<Stale | null>(null);
+  const [staleDays, setStaleDays] = useState(90);
+  // For the ready effect, which runs on a new scan only.
+  const staleDaysRef = useRef(staleDays);
+  staleDaysRef.current = staleDays;
   const [changed, setChanged] = useState<Changed | null>(null);
   const [panel, setPanel] = useState(false);
   const [tab, setTab] = useState<Tab>("reclaim");
@@ -49,6 +54,7 @@ export default function Root() {
   function refreshAfterChange() {
     if (shown.current !== null) show(shown.current);
     setReclaim(App.reclaimable());
+    setStale(App.stale(staleDays));
     if (phase.name === "ready") setSpace(App.space(phase.scanned.path));
   }
 
@@ -257,10 +263,12 @@ export default function Root() {
     if (phase.name === "ready") {
       show(0);
       setReclaim(App.reclaimable());
+      setStale(App.stale(staleDaysRef.current));
       setChanged(App.changed());
     } else {
       intro();
       setReclaim(null);
+      setStale(null);
       setChanged(null);
       setPanel(false);
       App.showReclaimable(false);
@@ -421,6 +429,15 @@ export default function Root() {
                 {bytes(reclaim.size)} can go
               </button>
             )}
+            {stale && stale.size > 0 && (
+              <button
+                className="control control-quiet control-stale"
+                aria-pressed={panel && tab === "stale"}
+                onClick={() => openPanel(!(panel && tab === "stale"), "stale")}
+              >
+                {bytes(stale.size)} in old projects
+              </button>
+            )}
             <button
               className="control control-quiet control-watch"
               aria-pressed={watching}
@@ -572,6 +589,12 @@ export default function Root() {
             App.highlight(node);
           }}
           reclaim={reclaim}
+          stale={stale}
+          staleDays={staleDays}
+          onStaleDays={(days) => {
+            setStaleDays(days);
+            setStale(App.stale(days));
+          }}
           busy={groupConfirm?.busy ? groupConfirm.group.id : null}
           onClean={(group) => setGroupConfirm({ group, busy: false, error: null })}
           onCopy={(command) => {
