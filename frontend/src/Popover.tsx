@@ -1,19 +1,30 @@
 import { useCallback, useEffect, useState } from "react";
-import { App, Plume, type Disk, type Space, type Top } from "./bindings";
+import { App, Plume, type Disk, type FreeHistory, type Space, type Top } from "./bindings";
 import { bytes, bytesParts, share } from "./format";
 import { Mark } from "./Meter";
 
 /** The alarm's choices, percent free. */
 const ALARMS = [5, 10, 15, 20];
 
-type Reading = { space: Space | null; top: Top[]; scanned: string | null; drive: string; alarm: number; others: Disk[] };
+type Reading = { space: Space | null; top: Top[]; scanned: string | null; drive: string; alarm: number; others: Disk[]; trend: FreeHistory | null };
 
 function read(): Reading {
   const home = App.home();
   const drive = driveOf(home);
   const others = App.disks().filter((d) => d.path.toLowerCase() !== drive.toLowerCase() && !d.removable);
-  return { space: App.space(home), top: App.largest(others.length > 0 ? 3 : 4), scanned: App.scannedPath(), drive, alarm: App.alarm(), others };
+  return {
+    space: App.space(home),
+    top: App.largest(others.length > 0 ? 3 : 4),
+    scanned: App.scannedPath(),
+    drive,
+    alarm: App.alarm(),
+    others,
+    trend: App.freeHistory(drive),
+  };
 }
+
+/** Less than this lost today is not said. */
+const LOST_TOLD = 1e9;
 
 /** The tray's popover: the disk as an arc meter with its headroom in the
  * middle, the alarm, what filled it at the last scan, the way into
@@ -39,7 +50,7 @@ export default function Popover() {
     };
   }, [refresh]);
 
-  const { space, top, scanned, drive, alarm, others } = reading;
+  const { space, top, scanned, drive, alarm, others, trend } = reading;
   const free = space ? space.free / space.total : 1;
   const low = free < alarm / 100;
   const [value, unit] = bytesParts(space?.free ?? 0);
@@ -70,6 +81,8 @@ export default function Popover() {
           </p>
         </div>
       </section>
+
+      {trend && trend.points.length > 1 && <Trend trend={trend} />}
 
       <div className="popover-alarm">
         {low && <p className="popover-warning">Less than {alarm}% of {drive} is free.</p>}
@@ -140,6 +153,38 @@ export default function Popover() {
         </button>
       </footer>
     </main>
+  );
+}
+
+/** The disk's free space over the last two weeks, a line from the oldest
+ * sample to now, and what it lost today when that is worth saying. */
+function Trend({ trend }: { trend: FreeHistory }) {
+  const W = 300;
+  const H = 36;
+  const { points } = trend;
+  const first = points[0].time;
+  const span = Math.max(points[points.length - 1].time - first, 1);
+  const frees = points.map((p) => p.free);
+  const low = Math.min(...frees);
+  const high = Math.max(...frees);
+  // A flat line sits in the middle; otherwise the range fills the height.
+  const range = Math.max(high - low, trend.total / 200, 1);
+  const mid = (high + low) / 2;
+  const line = points
+    .map((p) => `${((p.time - first) / span) * W},${H / 2 - ((p.free - mid) / range) * (H - 6)}`)
+    .join(" ");
+  const days = Math.max(1, Math.round(span / 86400));
+  const fell = trend.lost_today >= LOST_TOLD;
+  return (
+    <figure className="popover-trend" data-fell={fell ? "" : undefined}>
+      <svg className="trend" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label={`Free space over the last ${days} days`}>
+        <polyline className="trend-line" points={line} vectorEffect="non-scaling-stroke" />
+      </svg>
+      <figcaption className="popover-trend-caption">
+        <span>Free space, {days === 1 ? "today" : `last ${days} days`}</span>
+        {fell && <span className="popover-trend-lost">−{bytes(trend.lost_today)} today</span>}
+      </figcaption>
+    </figure>
   );
 }
 

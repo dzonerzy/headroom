@@ -102,15 +102,13 @@ export default function Root() {
     }
   }
 
-  // Watching free space: the tray's own requests, and its reading once a minute.
+  // Watching free space: the tray's own requests (it reads the disks itself).
   useEffect(() => {
     const offScan = Events.on("request_scan", (path) => void scan(path));
     const offWatching = Events.on("watching", (on) => setWatchingShown(on));
-    const timer = window.setInterval(() => App.watchTick(), 60_000);
     return () => {
       offScan();
       offWatching();
-      window.clearInterval(timer);
     };
     // scan only uses setters and refs.
     // eslint-disable-next-line react-hooks/exhaustive-deps

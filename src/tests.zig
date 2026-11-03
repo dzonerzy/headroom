@@ -25,6 +25,7 @@ test {
     _ = @import("wsl.zig");
     _ = @import("docker.zig");
     _ = @import("dupes.zig");
+    _ = @import("history.zig");
 }
 
 fn write(dir: std.Io.Dir, path: []const u8, bytes: usize) !void {
@@ -305,12 +306,33 @@ test "the tray's popover" {
     try write(tmp.dir, "ada/notes.md", 60_000);
     const root = try tmp.dir.realPathFileAlloc(std.testing.io, "ada", std.testing.allocator);
     defer std.testing.allocator.free(root);
+    // Two weeks of the disk's free space, an hour apart: 30 GB more free
+    // than now two weeks ago, 12 GB more this morning.
+    try tmp.dir.createDirPath(std.testing.io, "data");
+    const data = try tmp.dir.realPathFileAlloc(std.testing.io, "data", std.testing.allocator);
+    defer std.testing.allocator.free(data);
+    {
+        const disk = if (@import("builtin").os.tag == .windows) root[0..3] else "/";
+        const space = @import("volume.zig").space(std.testing.allocator, disk).?;
+        const now = @divFloor(std.Io.Clock.real.now(std.testing.io).toMilliseconds(), 1000);
+        // As the page counts them.
+        const GB: u64 = 1 << 30;
+        var samples: std.Io.Writer.Allocating = .init(std.testing.allocator);
+        defer samples.deinit();
+        // From an hour inside the two weeks kept (not on its edge).
+        var hours: u64 = 14 * 24 - 1;
+        while (hours > 0) : (hours -= 1) {
+            const more = if (hours <= 24) 12 * GB else 12 * GB + 18 * GB * (hours - 24) / (14 * 24 - 25);
+            try samples.writer.print("{s}\t{d}\t{d}\t{d}\n", .{ disk, now - @as(i64, @intCast(hours)) * 3600, space.free + more, space.total });
+        }
+        try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "data/space.tsv", .data = samples.written() });
+    }
 
-    const h = try plume.testing.Harness.startProject(@import("plume_project"), .{ .page = "tray.html", .width = 340, .height = 540 });
+    const h = try plume.testing.Harness.startProject(@import("plume_project"), .{ .page = "tray.html", .width = 340, .height = 580 });
     defer h.stop();
     var map: Map = .{ .window = null, .io = std.testing.io };
     defer map.deinit(std.heap.smp_allocator);
-    var state: App = .{ .io = std.testing.io, .home_path = root, .map = &map, .mft = false, .docker = false };
+    var state: App = .{ .io = std.testing.io, .home_path = root, .map = &map, .data_dir = data, .mft = false, .docker = false };
     defer state.deinit();
     state.events = h.app.events(App.Events);
     try h.app.bind("App", App, &state);
@@ -329,6 +351,13 @@ test "the tray's popover" {
     try std.testing.expect(try h.evaluate(bool, "document.querySelectorAll('.arc-segment[data-on]').length === Number(document.querySelector('.arc').dataset.level)"));
     try h.expectText(".popover-entry:first-child .popover-name", "games");
     try std.testing.expectEqual(@as(u32, 3), try h.evaluate(u32, "document.querySelectorAll('.popover-entry').length"));
+    // The two weeks under the arc (the samples, then now), and the 12 GB
+    // lost today (the disk's own
+    // use may move it a little meanwhile).
+    try h.waitFor(".popover-trend[data-fell]");
+    try std.testing.expectEqual(@as(u32, 336), try h.evaluate(u32, "document.querySelector('.trend-line').points.length"));
+    try std.testing.expect(std.mem.startsWith(u8, try h.text(".popover-trend-lost"), "−12"));
+    try h.expectText(".popover-trend-caption span:first-child", "Free space, last 14 days");
     try shot(h, "popover");
 
     // The alarm's threshold: 20%.

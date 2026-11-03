@@ -16,6 +16,7 @@ const projects = @import("projects.zig");
 const wsl = @import("wsl.zig");
 const docker = @import("docker.zig");
 const dupes = @import("dupes.zig");
+const history = @import("history.zig");
 const snapshot = @import("snapshot.zig");
 const disk_list = @import("disks.zig");
 
@@ -284,6 +285,20 @@ pub const App = struct {
     /// Below this percent of a disk free, the alarm (the meter's red zone
     /// is the last tenth).
     alarm_percent: u8 = 10,
+    /// Free space over time (<data_dir>/space.tsv), loaded on the first tick.
+    space_history: ?history.History = null,
+    /// When each disk was last told it lost space fast (seconds): once a day.
+    growth_told: std.ArrayList(Told) = .empty,
+    /// The background scan that says where a disk's space went (one at a time).
+    growth_thread: ?std.Thread = null,
+    growth_busy: std.atomic.Value(bool) = .init(false),
+    growth_cancel: std.atomic.Value(bool) = .init(false),
+    /// The tray's tick, once a minute, on its own thread (a hidden page's
+    /// timers are throttled).
+    ticker: ?std.Thread = null,
+    ticker_stop: std.atomic.Value(bool) = .init(false),
+
+    const Told = struct { disk: []u8, time: i64 };
 
     const gpa = std.heap.smp_allocator;
 
@@ -291,6 +306,13 @@ pub const App = struct {
     /// for it, and a whole disk takes minutes).
     pub fn stop(self: *App) void {
         self.cancelScan();
+        // The tick's thread and a background scan end with the app.
+        self.ticker_stop.store(true, .release);
+        self.growth_cancel.store(true, .release);
+        if (self.ticker) |t| t.join();
+        self.ticker = null;
+        if (self.growth_thread) |t| t.join();
+        self.growth_thread = null;
     }
 
     pub fn deinit(self: *App) void {
@@ -302,6 +324,9 @@ pub const App = struct {
         dupes.free(gpa, self.duplicate_groups);
         for (self.alarmed.items) |path| gpa.free(path);
         self.alarmed.deinit(gpa);
+        if (self.space_history) |*h| h.deinit(gpa);
+        for (self.growth_told.items) |t| gpa.free(t.disk);
+        self.growth_told.deinit(gpa);
     }
 
     /// The disks there are to scan, with their space.
@@ -446,6 +471,13 @@ pub const App = struct {
         if (found.bit_length > 0) for (finds) |f| found.set(f.node);
         // What changed since this folder's last scan; this one kept.
         const compared = self.compareAndKeep(&tree);
+        // The folder to scan again when its disk loses space fast.
+        if (source == .folder) if (self.data_dir) |dir| {
+            if (std.fs.path.join(gpa, &.{ dir, "scanned.txt" })) |file| {
+                defer gpa.free(file);
+                history.rememberScan(gpa, self.io, file, tree.root);
+            } else |_| {}
+        };
         const top = tree.node(scanner.Tree.root_index);
         const result: Scanned = .{
             .path = try allocator.dupe(u8, tree.root),
@@ -1109,7 +1141,158 @@ pub const App = struct {
             } else if (free_share > below + 0.01) if (told) |i| {
                 gpa.free(self.alarmed.swapRemove(i));
             };
+            self.watchGrowth(app, d);
         }
+    }
+
+    /// A disk's free space kept an hour at a time; one that lost a lot within
+    /// a day is told once, then where the space went: the folder scanned
+    /// there last, scanned again in the background and compared with its
+    /// snapshot (not replaced: the next scan of it still shows the change).
+    fn watchGrowth(self: *App, app: *plume.App, d: disk_list.Disk) void {
+        const dir = self.data_dir orelse return;
+        const now = @divFloor(std.Io.Clock.real.now(self.io).toMilliseconds(), 1000);
+        const file = std.fs.path.join(gpa, &.{ dir, "space.tsv" }) catch return;
+        defer gpa.free(file);
+        if (self.space_history == null) self.space_history = history.History.load(gpa, self.io, file);
+        const h = &self.space_history.?;
+        const lost = h.lost(d.path, now, history.day, d.free);
+        if (h.record(gpa, d.path, now, d.free, d.total) catch false) h.save(gpa, self.io, file);
+        if (!history.alarming(lost, d.total)) return;
+        // Once a day per disk.
+        for (self.growth_told.items) |*t| {
+            if (!std.mem.eql(u8, t.disk, d.path)) continue;
+            if (now - t.time < history.day) return;
+            t.time = now;
+            break;
+        } else {
+            const disk = gpa.dupe(u8, d.path) catch return;
+            self.growth_told.append(gpa, .{ .disk = disk, .time = now }) catch {
+                gpa.free(disk);
+                return;
+            };
+        }
+        const scanned_file = std.fs.path.join(gpa, &.{ dir, "scanned.txt" }) catch return;
+        defer gpa.free(scanned_file);
+        const folder = history.lastScanOn(gpa, self.io, scanned_file, d.path);
+        var lost_text: [32]u8 = undefined;
+        var title: [96]u8 = undefined;
+        var body: [256]u8 = undefined;
+        app.notify(.{
+            .title = std.fmt.bufPrint(&title, "{s} lost {s} today", .{ d.path, human(&lost_text, lost) }) catch "A disk is losing space fast",
+            .body = if (folder) |f|
+                std.fmt.bufPrint(&body, "Headroom is looking at what grew in {s}.", .{f}) catch null
+            else
+                "Scan it in Headroom to see what grew.",
+            .tag = "headroom-growth",
+        }) catch {};
+        const scan_folder = folder orelse return;
+        // One background scan at a time, not beside the user's; the
+        // previous one's thread joined.
+        if (self.scanning.load(.acquire) or self.growth_busy.swap(true, .acq_rel)) {
+            gpa.free(scan_folder);
+            return;
+        }
+        if (self.growth_thread) |t| t.join();
+        self.growth_thread = std.Thread.spawn(.{}, growthScan, .{ self, scan_folder }) catch blk: {
+            gpa.free(scan_folder);
+            self.growth_busy.store(false, .release);
+            break :blk null;
+        };
+    }
+
+    /// The background scan of `folder` (gpa, freed here) after a disk lost
+    /// space fast: what grew most, told on the runtime thread.
+    fn growthScan(self: *App, folder: []const u8) void {
+        defer self.growth_busy.store(false, .release);
+        defer gpa.free(folder);
+        var tree = scanner.scan(gpa, self.io, folder, .{ .cancel = &self.growth_cancel, .mft = self.mft }) catch return;
+        defer tree.deinit(gpa);
+        const dir = self.data_dir orelse return;
+        var arena: std.heap.ArenaAllocator = .init(gpa);
+        defer arena.deinit();
+        const a = arena.allocator();
+        const snapshots = std.fs.path.join(a, &.{ dir, "snapshots" }) catch return;
+        const file = snapshot.fileFor(a, snapshots, tree.root) catch return;
+        const bytes = std.Io.Dir.cwd().readFileAlloc(self.io, file, a, .limited(64 * 1024 * 1024)) catch return;
+        const old = snapshot.parse(a, bytes) catch return;
+        const changes = snapshot.diff(a, &old, &tree) catch return;
+        if (changes.grew.len == 0) return;
+        const top = changes.grew[0];
+        var grew_text: [32]u8 = undefined;
+        const Note = struct {
+            app: *App,
+            title: []u8,
+            body: []u8,
+            fn send(note: *@This()) void {
+                defer gpa.destroy(note);
+                defer gpa.free(note.title);
+                defer gpa.free(note.body);
+                const plume_app = note.app.plume_app orelse return;
+                plume_app.notify(.{ .title = note.title, .body = note.body, .tag = "headroom-growth" }) catch {};
+            }
+        };
+        const plume_app = self.plume_app orelse return;
+        const note = gpa.create(Note) catch return;
+        note.* = .{ .app = self, .title = &.{}, .body = &.{} };
+        note.title = std.fmt.allocPrint(gpa, "Mostly {s}: +{s}", .{ top.path, human(&grew_text, top.after -| top.before) }) catch &.{};
+        note.body = std.fmt.allocPrint(gpa, "In {s}, since you last scanned it. Scan it again in Headroom to see the rest.", .{folder}) catch &.{};
+        if (note.title.len == 0 or note.body.len == 0) {
+            gpa.free(note.title);
+            gpa.free(note.body);
+            gpa.destroy(note);
+            return;
+        }
+        plume_app.dispatch(note, Note.send) catch {
+            gpa.free(note.title);
+            gpa.free(note.body);
+            gpa.destroy(note);
+        };
+    }
+
+    /// The tray's tick on its own thread: watchTick on the runtime thread
+    /// once a minute, until the app stops.
+    fn tick(self: *App) void {
+        while (true) {
+            var waited: u32 = 0;
+            while (waited < 60) : (waited += 1) {
+                if (self.ticker_stop.load(.acquire)) return;
+                std.Io.sleep(self.io, .fromSeconds(1), .awake) catch {};
+            }
+            const app = self.plume_app orelse return;
+            app.dispatch(self, watchTick) catch {};
+        }
+    }
+
+    pub const FreeHistory = struct {
+        /// Oldest first, the last two weeks.
+        points: []const FreePoint,
+        total: u64,
+        /// Lost within the last day (0 if it gained).
+        lost_today: u64,
+    };
+
+    pub const FreePoint = struct { time: i64, free: u64 };
+
+    /// `disk`'s free space over the last two weeks (the tray's popover);
+    /// null without a data folder or samples.
+    pub fn freeHistory(self: *App, allocator: std.mem.Allocator, disk: []const u8) error{OutOfMemory}!?FreeHistory {
+        const dir = self.data_dir orelse return null;
+        if (self.space_history == null) {
+            const file = try std.fs.path.join(gpa, &.{ dir, "space.tsv" });
+            defer gpa.free(file);
+            self.space_history = history.History.load(gpa, self.io, file);
+        }
+        const h = &self.space_history.?;
+        const now = @divFloor(std.Io.Clock.real.now(self.io).toMilliseconds(), 1000);
+        const samples = try h.series(allocator, disk, now - history.keep);
+        if (samples.len == 0) return null;
+        // The samples, then now (what fell since the last sample shows too).
+        const current = if (volume.space(gpa, disk)) |s| s.free else samples[samples.len - 1].free;
+        const points = try allocator.alloc(FreePoint, samples.len + 1);
+        for (samples, points[0..samples.len]) |s, *p| p.* = .{ .time = s.time, .free = s.free };
+        points[samples.len] = .{ .time = now, .free = current };
+        return .{ .points = points, .total = samples[samples.len - 1].total, .lost_today = h.lost(disk, now, history.day, current) };
     }
 
     /// main.zig: the tray, when watching was on last time. A click on its
@@ -1123,7 +1306,7 @@ pub const App = struct {
                 .title = "Headroom",
                 .url = "tray.html",
                 .width = 340,
-                .height = 540,
+                .height = 580,
                 .frameless = true,
                 .transparent = true,
                 .resizable = false,
@@ -1142,6 +1325,7 @@ pub const App = struct {
         tray.attachWindow(self.popover);
         self.tray = tray;
         self.watchTick();
+        if (self.ticker == null) self.ticker = std.Thread.spawn(.{}, tick, .{self}) catch null;
     }
 
     fn stopWatching(self: *App) void {

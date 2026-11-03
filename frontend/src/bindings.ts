@@ -267,6 +267,17 @@ export interface Removal {
   generation: number;
 }
 
+export interface FreeHistory {
+  points: FreePoint[];
+  total: number;
+  lost_today: number;
+}
+
+export interface FreePoint {
+  time: number;
+  free: number;
+}
+
 export interface Top {
   name: string;
   size: number;
@@ -321,6 +332,7 @@ export interface AppErrors {
   watching: never;
   setWatching: "Unsupported";
   watchTick: never;
+  freeHistory: "OutOfMemory";
   largest: "OutOfMemory";
   scannedPath: "OutOfMemory";
   openMain: never;
@@ -385,6 +397,8 @@ export interface AppBindings {
   /** Fails with PlumeError<AppErrors["setWatching"]>. */
   setWatching(arg1: boolean): void;
   watchTick(): void;
+  /** Fails with PlumeError<AppErrors["freeHistory"]>. */
+  freeHistory(arg1: string): FreeHistory | null;
   /** Fails with PlumeError<AppErrors["largest"]>. */
   largest(arg1: number): Top[];
   /** Fails with PlumeError<AppErrors["scannedPath"]>. */
@@ -643,6 +657,9 @@ export const App: AppBindings = {
   },
   watchTick() {
     try { return native.watchTick(); } catch (error) { throw plumeError(error); }
+  },
+  freeHistory(arg1) {
+    try { return native.freeHistory(arg1); } catch (error) { throw plumeError(error); }
   },
   largest(arg1) {
     try { return native.largest(arg1); } catch (error) { throw plumeError(error); }

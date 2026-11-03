@@ -24,8 +24,9 @@ a folder to go deeper; the meter above shows the disk like an audio level
 meter, its free space the headroom.
 
 It knows what developers' tools leave behind and make again (`node_modules`,
-Rust's `target`, `.zig-cache`, CMake build trees, package managers' caches,
-Docker's and WSL's disks), says how safe each is to clear, and clears it.
+Rust's `target`, `.zig-cache`, .NET's `bin` and `obj`, Unity's `Library`,
+package managers' caches, AI models, Docker's and WSL's disks), says how safe
+each is to clear, and clears it.
 
 ## What it does
 
@@ -43,7 +44,21 @@ Docker's and WSL's disks), says how safe each is to clear, and clears it.
   found, biggest first: what each is, whether it comes back by itself, with a
   build, or needs a look first, and its action: delete it, copy the command
   that clears it (`docker system prune`, `npm cache clean --force`), empty the
-  Recycle Bin. The map outlines each and dims the rest.
+  Recycle Bin. The map outlines each and dims the rest. Over fifty kinds of leftovers:
+  JavaScript, Python, Rust, Go, Zig, C and C++ (vcpkg, ccache, Bazel), .NET,
+  Java, game engines (Unity, Unreal, Godot), IDEs, Hugging Face and Ollama
+  models, Snap and Flatpak leftovers, Windows Update's downloads.
+- **Finds old projects.** Projects untouched for 3, 6 or 12 months whose
+  build output and packages are still there: "4 projects untouched since
+  May: 9.1 GB can go", cleared one by one or all at once.
+- **Finds duplicates**, on demand: files of 1 MB and up kept more than once,
+  compared by content (hard links are not copies). One copy of each always
+  stays; the others go to the Recycle Bin.
+- **Looks inside WSL and Docker** (Windows). Each WSL distribution with the
+  size of its virtual disk: scan inside it with the Linux rules, then compact
+  the disk to give the space back to Windows (as administrator, after saying
+  that it stops WSL). Docker's images, containers and build cache, each
+  pruned after a confirmation; Docker's volumes are never touched.
 - **Tells what changed.** The next scan of a folder says what grew and shrank
   since the last one, where it happened: `+3.2 GB since 2 Nov`, in
   `projects/engine/build`.
@@ -55,12 +70,15 @@ Docker's and WSL's disks), says how safe each is to clear, and clears it.
 - **Sees what you cannot.** After a whole disk, it says how much is in folders
   only an administrator can read, and scans again as one (Windows).
 - **Watches free space** from the tray, if you ask: the headroom at a glance,
-  and a notification when a disk drops below 5, 10, 15 or 20 percent free.
+  the last two weeks of it, and a notification when a disk drops below 5, 10,
+  15 or 20 percent free. A disk that loses 10 GB in a day (5% of a small one)
+  is told too, and Headroom scans the folder you last scanned there to say
+  what grew: "Mostly `AppData/Local/Docker`: +11 GB".
 
 ![The "Can go" panel: Rust build output, npm packages, Zig's cache, CMake build trees, each outlined on the map](docs/can-go.png)
 
 <p align="center">
-  <img src="docs/popover.png" width="300" alt="The tray's popover: an arc meter with the headroom in the middle, the alarm's threshold, the largest folders">
+  <img src="docs/popover.png" width="300" alt="The tray's popover: an arc meter with the headroom in the middle, two weeks of free space under it, the alarm's threshold, the largest folders">
 </p>
 
 ## Download
@@ -74,8 +92,9 @@ install: the web engine it draws with is inside it.
 
 ## Privacy
 
-Headroom reads names and sizes, never what is in your files, and keeps what it
-measured on your computer (`%LOCALAPPDATA%\Headroom`, or
+Headroom reads names, sizes and dates; what is in your files only when you
+ask it to find duplicates, to compare them (nothing of it is kept). It keeps
+what it measured on your computer (`%LOCALAPPDATA%\Headroom`, or
 `~/.local/share/headroom` on Linux). It asks nothing of the network except
 GitHub, for updates.
 
@@ -96,7 +115,9 @@ plume package    # build/package: the installer, the zip, the .deb, ...
 ```
 
 `zig build scan -Doptimize=ReleaseFast -- <folder>` runs the scanner and the
-rules alone on a folder and prints what they found and how long it took.
+rules alone on a folder and prints what they found and how long it took
+(`--dupes` adds the duplicates; `wsl:<distribution>` scans inside WSL, `wsl:`
+lists the distributions).
 
 ## License
 

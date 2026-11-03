@@ -930,6 +930,49 @@
     font-size: 0.84rem;
   }
 
+  /* Free space over the last two weeks, under the arc: a thin trace, red
+     when the disk fell fast today. */
+  .popover-trend {
+    margin: 0 1.4rem 0.6rem;
+  }
+
+  .trend {
+    display: block;
+    width: 100%;
+    height: 1.6rem;
+    overflow: visible;
+  }
+
+  .trend-line {
+    fill: none;
+    stroke: color-mix(in oklab, var(--level) 70%, #5f6f82);
+    stroke-width: 1.5;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+  }
+
+  .popover-trend[data-fell] .trend-line {
+    stroke: var(--clip);
+  }
+
+  .popover-trend-caption {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-top: 0.2rem;
+    color: #5f6f82;
+    font-size: 0.72rem;
+  }
+
+  .popover-trend-lost {
+    color: var(--clip);
+    font-weight: 600;
+  }
+
+  .popover-trend + .popover-alarm {
+    margin-top: 0;
+  }
+
   /* The warning on its own line when the disk is below the alarm, then the
      label and the choices on one line. */
   .popover-alarm {
