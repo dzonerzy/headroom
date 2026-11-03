@@ -62,6 +62,9 @@ pub const Tree = struct {
     /// Read from an NTFS volume's file table (administrator, Windows):
     /// hard links counted once, nothing unreadable.
     from_mft: bool = false,
+    /// A Linux filesystem (a WSL distribution's, read on Windows): Linux's
+    /// rules apply and names are compared with their case.
+    linux: bool = builtin.os.tag == .linux,
 
     pub const root_index: u32 = 0;
 

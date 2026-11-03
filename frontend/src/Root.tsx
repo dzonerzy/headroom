@@ -6,6 +6,7 @@ import { Mark, Meter } from "./Meter";
 import { bin, ConfirmRemove, type Mode } from "./Remove";
 import { ConfirmGroup, SidePanel, type Tab } from "./Reclaim";
 import { ListView, Search } from "./Find";
+import { MachineList } from "./Machine";
 import type { Changed, Group, Place, Reclaim, Removal, Stale } from "./bindings";
 
 type Phase =
@@ -27,6 +28,9 @@ export default function Root() {
   const shown = useRef<number | null>(null);
   const admin = useRef(App.admin());
   const disks = useRef(App.disks());
+  // WSL's distributions (the registry: quick); Docker is asked when its tab opens.
+  const distros = useRef(App.distros());
+  const machineLabel = distros.current.length > 0 ? "WSL & Docker" : "Docker";
   const [elevating, setElevating] = useState(false);
   const [confirm, setConfirm] = useState<{ removal: Removal; mode: Mode; busy: boolean; error: string | null } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -55,7 +59,7 @@ export default function Root() {
     if (shown.current !== null) show(shown.current);
     setReclaim(App.reclaimable());
     setStale(App.stale(staleDays));
-    if (phase.name === "ready") setSpace(App.space(phase.scanned.path));
+    if (phase.name === "ready" && !phase.scanned.wsl) setSpace(App.space(phase.scanned.path));
   }
 
   function goTo(place: Place) {
@@ -207,14 +211,22 @@ export default function Root() {
     }
   }, []);
 
-  async function scan(path: string) {
+  /** The same scan again: a WSL distribution through its own find, as the
+   * first time (its folders over WSL's share would be slow, /mnt/c in them). */
+  function rescan(scanned: Scanned) {
+    const distro = scanned.wsl ? scanned.path.replace(/^\\\\wsl(\.localhost|\$)\\/i, "") : undefined;
+    void scan(scanned.path, distro);
+  }
+
+  /** A folder, or with `distro` everything inside that WSL distribution. */
+  async function scan(path: string, distro?: string) {
     shown.current = null;
     setView(null);
     setHovered(null);
-    setSpace(App.space(path));
+    if (!distro) setSpace(App.space(path));
     setPhase({ name: "scanning", path, progress: null });
     try {
-      const scanned = await App.scan(path);
+      const scanned = distro ? await App.scanDistro(distro) : await App.scan(path);
       setPhase({ name: "ready", scanned });
     } catch (error) {
       if (error instanceof PlumeError && error.code === "Canceled") {
@@ -227,6 +239,8 @@ export default function Root() {
         AccessDenied: "Headroom is not allowed to read that folder.",
         OutOfMemory: "There is not enough memory to hold everything in it.",
         Busy: "A scan is already running.",
+        NoWsl: "WSL is not available.",
+        Failed: "The distribution could not be read (is it installed and working?).",
       };
       const message = error instanceof PlumeError ? (reasons[error.code as string] ?? String(error.code)) : String(error);
       setPhase({ name: "failed", path, message });
@@ -429,6 +443,13 @@ export default function Root() {
                 {bytes(reclaim.size)} can go
               </button>
             )}
+            <button
+              className="control control-quiet control-machine"
+              aria-pressed={panel && tab === "machine"}
+              onClick={() => openPanel(!(panel && tab === "machine"), "machine")}
+            >
+              {machineLabel}
+            </button>
             {stale && stale.size > 0 && (
               <button
                 className="control control-quiet control-stale"
@@ -448,7 +469,7 @@ export default function Root() {
               Watch free space
             </button>
             {phase.name === "ready" && (
-              <button className="control" onClick={() => scan(phase.scanned.path)}>
+              <button className="control control-rescan" onClick={() => rescan(phase.scanned)}>
                 Scan again
               </button>
             )}
@@ -604,6 +625,21 @@ export default function Root() {
           onGo={goTo}
           onHover={(place) => (place ? App.highlight(place.node) : App.hover(-1, 0))}
           onClose={() => openPanel(false)}
+          machine={{
+            label: machineLabel,
+            content: (
+              <MachineList
+                distros={distros.current}
+                admin={admin.current}
+                onLookInside={(distro) => {
+                  openPanel(false);
+                  void scan(`\\\\wsl.localhost\\${distro.name}`, distro.name);
+                }}
+                onNotice={setNotice}
+                onAdmin={() => scanAsAdmin(home.current)}
+              />
+            ),
+          }}
         />
       )}
       </div>
@@ -613,6 +649,7 @@ export default function Root() {
           group={groupConfirm.group}
           busy={groupConfirm.busy}
           error={groupConfirm.error}
+          noBin={phase.name === "ready" && phase.scanned.wsl}
           onConfirm={cleanGroup}
           onCancel={() => setGroupConfirm(null)}
         />

@@ -19,16 +19,16 @@ pub fn build(b: *std.Build) void {
     const scan = b.createModule(.{ .root_source_file = b.path("src/scan.zig"), .target = target, .optimize = optimize });
     const scan_tests = b.addTest(.{ .root_module = scan });
     b.step("test-scan", "Run the scanner's unit tests").dependOn(&b.addRunArtifact(scan_tests).step);
-    const rules = b.createModule(.{ .root_source_file = b.path("src/rules.zig"), .target = target, .optimize = optimize });
+    const headroom = b.createModule(.{ .root_source_file = b.path("src/tool.zig"), .target = target, .optimize = optimize });
     const scan_tool = b.addExecutable(.{ .name = "scan", .root_module = b.createModule(.{
         .root_source_file = b.path("tools/scan.zig"),
         .target = target,
         .optimize = optimize,
-        .imports = &.{.{ .name = "rules", .module = rules }},
+        .imports = &.{.{ .name = "headroom", .module = headroom }},
     }) });
     const scan_run = b.addRunArtifact(scan_tool);
     scan_run.addPassthruArgs();
-    b.step("scan", "Scan a folder: zig build scan -- <folder> [threads]").dependOn(&scan_run.step);
+    b.step("scan", "Scan a folder: zig build scan -- <folder|wsl:distribution> [threads]").dependOn(&scan_run.step);
 
     // icon.png, drawn by code.
     const icon_tool = b.addExecutable(.{ .name = "icon", .root_module = b.createModule(.{

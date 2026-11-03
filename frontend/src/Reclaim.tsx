@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Changed, Group, Moved, Place, Reclaim, Stale, StaleProject } from "./bindings";
 import { ago, bytes, bytesParts, exact, plural } from "./format";
 import { bin } from "./Remove";
@@ -9,7 +9,7 @@ const risks = {
   careful: "Look before clearing",
 } as const;
 
-export type Tab = "reclaim" | "stale" | "changed";
+export type Tab = "reclaim" | "stale" | "changed" | "machine";
 
 /** How old a project must be, in days, to be stale: the choices. */
 export const STALE_AGES = [
@@ -35,8 +35,10 @@ export function SidePanel(props: {
   onGo: (place: Place) => void;
   onHover: (place: Place | null) => void;
   onGoTo: (parent: number, node: number) => void;
+  /** WSL and Docker: its tab's label and content (none: no tab). */
+  machine: { label: string; content: ReactNode } | null;
 }) {
-  const { tab, onTab, onClose } = props;
+  const { tab, onTab, onClose, machine } = props;
   return (
     <aside className="reclaim" aria-label="What can go and what changed">
       <nav className="side-tabs" aria-label="Panel">
@@ -49,6 +51,11 @@ export function SidePanel(props: {
         <button className="side-tab" aria-current={tab === "changed" ? "page" : undefined} onClick={() => onTab("changed")}>
           Changed
         </button>
+        {machine && (
+          <button className="side-tab" aria-current={tab === "machine" ? "page" : undefined} onClick={() => onTab("machine")}>
+            {machine.label}
+          </button>
+        )}
         <button className="control control-quiet reclaim-close" onClick={onClose} aria-label="Close">
           ✕
         </button>
@@ -59,6 +66,8 @@ export function SidePanel(props: {
         ) : (
           <p className="reclaim-empty">Scan a folder to see what can go.</p>
         )
+      ) : tab === "machine" && machine ? (
+        machine.content
       ) : tab === "stale" ? (
         props.stale ? (
           <StaleList {...props} stale={props.stale} />
@@ -393,6 +402,8 @@ type ConfirmProps = {
   group: Group;
   busy: boolean;
   error: string | null;
+  /** Inside a WSL distribution: no Recycle Bin to offer. */
+  noBin?: boolean;
   onConfirm: (mode: "trash" | "permanent") => void;
   onCancel: () => void;
 };
@@ -400,7 +411,7 @@ type ConfirmProps = {
 /** Before a group goes: how many, how much, which ones, and how they come
  * back. Caches go for good (the Recycle Bin would keep their space); the
  * Recycle Bin is offered anyway. */
-export function ConfirmGroup({ group, busy, error, onConfirm, onCancel }: ConfirmProps) {
+export function ConfirmGroup({ group, busy, error, noBin = false, onConfirm, onCancel }: ConfirmProps) {
   const cancel = useRef<HTMLButtonElement>(null);
   useEffect(() => cancel.current?.focus(), []);
   const emptying = group.action === "empty_bin";
@@ -428,11 +439,13 @@ export function ConfirmGroup({ group, busy, error, onConfirm, onCancel }: Confir
         <p className="dialog-note">
           {emptying
             ? `What is in the ${bin} cannot be restored after.`
-            : `${group.why}${group.command ? ` (${group.command})` : ""} Deleted for good, the space comes back at once; in the ${bin}, only once it is emptied.`}
+            : noBin
+              ? `${group.why}${group.command ? ` (${group.command})` : ""} Deleted for good: the ${bin} does not take a WSL distribution's files.`
+              : `${group.why}${group.command ? ` (${group.command})` : ""} Deleted for good, the space comes back at once; in the ${bin}, only once it is emptied.`}
         </p>
         {error && <p className="dialog-error" role="alert">{error}</p>}
         <div className="dialog-actions">
-          {!emptying ? (
+          {!emptying && !noBin ? (
             <button className="control control-quiet dialog-switch" onClick={() => onConfirm("trash")} disabled={busy}>
               Move to the {bin} instead
             </button>

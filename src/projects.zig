@@ -9,7 +9,6 @@
 //! or with a build and that Headroom deletes.
 
 const std = @import("std");
-const builtin = @import("builtin");
 const scan = @import("scan.zig");
 const rules = @import("rules.zig");
 
@@ -80,7 +79,7 @@ pub fn stale(a: std.mem.Allocator, tree: *const scan.Tree, root: u32, finds: []c
                 .file => if (project) |p| {
                     open.items[p].newest = @max(open.items[p].newest, c.mtime);
                 },
-                .directory => if (!sameName(tree.name(child), ".git")) try stack.append(a, .{ .node = child, .project = project }),
+                .directory => if (!sameName(tree, tree.name(child), ".git")) try stack.append(a, .{ .node = child, .project = project }),
                 else => {},
             }
         }
@@ -112,15 +111,16 @@ fn isProject(tree: *const scan.Tree, dir: u32) bool {
         for (markers) |m| {
             if (m[0] == '*') {
                 const end = m[1..];
-                if (name.len > end.len and sameName(name[name.len - end.len ..], end)) return true;
-            } else if (sameName(name, m)) return true;
+                if (name.len > end.len and sameName(tree, name[name.len - end.len ..], end)) return true;
+            } else if (sameName(tree, name, m)) return true;
         }
     }
     return false;
 }
 
-fn sameName(a: []const u8, b: []const u8) bool {
-    return if (builtin.os.tag == .windows) std.ascii.eqlIgnoreCase(a, b) else std.mem.eql(u8, a, b);
+/// Names compared as the tree's system does: without case on Windows.
+fn sameName(tree: *const scan.Tree, a: []const u8, b: []const u8) bool {
+    return if (tree.linux) std.mem.eql(u8, a, b) else std.ascii.eqlIgnoreCase(a, b);
 }
 
 // ---- Tests ----

@@ -1,23 +1,35 @@
 //! zig build scan -Doptimize=ReleaseFast -- <folder> [threads]: the scanner
 //! alone on a real folder, how long it takes, what is biggest in it, and
-//! what the rules find that can go.
+//! what the rules find that can go. "wsl:<distribution>" reads inside a WSL
+//! distribution instead; "wsl:" alone lists them.
 
 const std = @import("std");
-const rules = @import("rules");
-const scan = rules.scanner;
+const headroom = @import("headroom");
+const rules = headroom.rules;
+const scan = headroom.scan;
+const wsl = headroom.wsl;
 
 pub fn main(init: std.process.Init) !u8 {
     const args = try init.minimal.args.toSlice(init.arena.allocator());
     if (args.len < 2) {
-        std.debug.print("usage: zig build scan -- <folder> [threads]\n", .{});
+        std.debug.print("usage: zig build scan -- <folder|wsl:distribution> [threads]\n", .{});
         return 2;
     }
     const threads = if (args.len > 2) try std.fmt.parseInt(usize, args[2], 10) else 0;
     const a = std.heap.smp_allocator;
     const io = init.io;
 
+    if (std.mem.eql(u8, args[1], "wsl:")) {
+        const distros = try wsl.list(init.arena.allocator());
+        for (distros) |d| std.debug.print("  {Bi:>10.1}  {s} (WSL {d}) {s}\n", .{ d.size, d.name, d.version, d.disk });
+        return 0;
+    }
     const start = std.Io.Clock.awake.now(io);
-    var tree = scan.scan(a, io, args[1], .{ .threads = threads }) catch |err| {
+    const scanned = if (std.mem.startsWith(u8, args[1], "wsl:"))
+        wsl.scanDistro(a, io, args[1][4..], null, null)
+    else
+        scan.scan(a, io, args[1], .{ .threads = threads });
+    var tree = scanned catch |err| {
         std.debug.print("{s}: {s}\n", .{ args[1], @errorName(err) });
         return 1;
     };

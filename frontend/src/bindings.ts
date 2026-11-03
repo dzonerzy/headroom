@@ -47,7 +47,58 @@ export interface Scanned {
   unreadable: number;
   ms: number;
   from_mft: boolean;
+  wsl: boolean;
 }
+
+export interface Distro {
+  name: string;
+  disk: string;
+  size: number;
+  version: number;
+}
+
+export interface Compacted {
+  before: number;
+  after: number;
+}
+
+export interface Usage {
+  images: Category;
+  containers: Category;
+  volumes: Category;
+  build_cache: Category;
+  image_list: Image[];
+  container_list: Container[];
+  volume_list: Volume[];
+}
+
+export interface Category {
+  size: number;
+  reclaimable: number;
+  count: number;
+  active: number;
+}
+
+export interface Image {
+  name: string;
+  size: number;
+  used: boolean;
+}
+
+export interface Container {
+  name: string;
+  image: string;
+  size: number;
+  running: boolean;
+}
+
+export interface Volume {
+  name: string;
+  size: number;
+  used: boolean;
+}
+
+export type Prune = "containers" | "images" | "build_cache";
 
 export interface View {
   node: number;
@@ -220,8 +271,13 @@ export interface AppErrors {
   admin: never;
   restartAsAdmin: "Unsupported" | "OutOfMemory" | "Declined";
   intro: never;
-  scan: "AccessDenied" | "Canceled" | "OutOfMemory" | "FileNotFound" | "NotDir" | "Busy";
+  scan: "AccessDenied" | "Canceled" | "OutOfMemory" | "FileNotFound" | "NotDir" | "NoWsl" | "Failed" | "Busy";
+  scanDistro: "AccessDenied" | "Canceled" | "OutOfMemory" | "FileNotFound" | "NotDir" | "NoWsl" | "Failed" | "Busy";
   cancelScan: never;
+  distros: "OutOfMemory";
+  compactDistro: "Canceled" | "OutOfMemory" | "NoWsl" | "Failed" | "Busy" | "NotAdmin" | "NotFound";
+  dockerUsage: "OutOfMemory" | "Failed" | "NoDocker" | "NotRunning";
+  dockerPrune: "OutOfMemory" | "Failed" | "NoDocker" | "NotRunning";
   view: "OutOfMemory" | "NoScan" | "NotAFolder";
   hover: "OutOfMemory";
   reclaimable: "OutOfMemory";
@@ -229,11 +285,11 @@ export interface AppErrors {
   showReclaimable: never;
   highlight: never;
   removeMany: "Stale" | "NoScan";
-  emptyBin: "AccessDenied" | "Canceled" | "OutOfMemory" | "Stale" | "FileNotFound" | "NotDir" | "NoScan" | "InUse" | "NotFound" | "TrashUnavailable" | "Failed";
+  emptyBin: "AccessDenied" | "Canceled" | "OutOfMemory" | "Stale" | "FileNotFound" | "NotDir" | "Failed" | "NotFound" | "NoScan" | "InUse" | "TrashUnavailable";
   search: "OutOfMemory";
   entries: "OutOfMemory" | "NoScan";
-  removal: "OutOfMemory" | "NoScan" | "NotFound";
-  remove: "AccessDenied" | "OutOfMemory" | "Stale" | "NoScan" | "InUse" | "NotFound" | "TrashUnavailable" | "Failed" | "Refused";
+  removal: "OutOfMemory" | "NotFound" | "NoScan";
+  remove: "AccessDenied" | "OutOfMemory" | "Stale" | "Failed" | "NotFound" | "NoScan" | "InUse" | "TrashUnavailable" | "Refused";
   watching: never;
   setWatching: "Unsupported";
   watchTick: never;
@@ -260,7 +316,17 @@ export interface AppBindings {
   intro(arg1: number, arg2: number, arg3: number, arg4: number, arg5: number): void;
   /** Fails with PlumeError<AppErrors["scan"]>. */
   scan(arg1: string): Promise<Scanned>;
+  /** Fails with PlumeError<AppErrors["scanDistro"]>. */
+  scanDistro(arg1: string): Promise<Scanned>;
   cancelScan(): void;
+  /** Fails with PlumeError<AppErrors["distros"]>. */
+  distros(): Distro[];
+  /** Fails with PlumeError<AppErrors["compactDistro"]>. */
+  compactDistro(arg1: string): Promise<Compacted>;
+  /** Fails with PlumeError<AppErrors["dockerUsage"]>. */
+  dockerUsage(): Promise<Usage>;
+  /** Fails with PlumeError<AppErrors["dockerPrune"]>. */
+  dockerPrune(arg1: Prune): Promise<number>;
   /** Fails with PlumeError<AppErrors["view"]>. */
   view(arg1: number, arg2: number, arg3: number, arg4: number, arg5: number, arg6: number): View;
   /** Fails with PlumeError<AppErrors["hover"]>. */
@@ -476,8 +542,23 @@ export const App: AppBindings = {
   scan(arg1) {
     return native.scan(arg1).catch((error: unknown) => { throw plumeError(error); });
   },
+  scanDistro(arg1) {
+    return native.scanDistro(arg1).catch((error: unknown) => { throw plumeError(error); });
+  },
   cancelScan() {
     try { return native.cancelScan(); } catch (error) { throw plumeError(error); }
+  },
+  distros() {
+    try { return native.distros(); } catch (error) { throw plumeError(error); }
+  },
+  compactDistro(arg1) {
+    return native.compactDistro(arg1).catch((error: unknown) => { throw plumeError(error); });
+  },
+  dockerUsage() {
+    return native.dockerUsage().catch((error: unknown) => { throw plumeError(error); });
+  },
+  dockerPrune(arg1) {
+    return native.dockerPrune(arg1).catch((error: unknown) => { throw plumeError(error); });
   },
   view(arg1, arg2, arg3, arg4, arg5, arg6) {
     try { return native.view(arg1, arg2, arg3, arg4, arg5, arg6); } catch (error) { throw plumeError(error); }

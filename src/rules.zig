@@ -239,13 +239,13 @@ fn match(tree: *const scan.Tree, index: u32) ?u16 {
     const candidates = by_name.get(std.ascii.lowerString(&buffer, name)) orelse return null;
     for (candidates) |r| {
         const rule = rules[r];
-        if (!forThisOs(rule.os)) continue;
+        if (!forThisOs(tree, rule.os)) continue;
         switch (rule.kind) {
             .marker => continue,
             .folder => if (n.kind != .directory) continue,
             .file => if (n.kind != .file) continue,
         }
-        if (!sameName(name, rule.name)) continue;
+        if (!sameName(tree, name, rule.name)) continue;
         if (rule.beside) |file| if (!hasChild(tree, n.parent, file)) continue;
         if (rule.inside) |file| if (!hasChild(tree, index, file)) continue;
         if (!isUnder(tree, index, rule.under)) continue;
@@ -256,23 +256,25 @@ fn match(tree: *const scan.Tree, index: u32) ?u16 {
 
 fn markerIn(tree: *const scan.Tree, dir: u32) ?u16 {
     for (rules, 0..) |rule, r| {
-        if (rule.kind != .marker or !forThisOs(rule.os)) continue;
+        if (rule.kind != .marker or !forThisOs(tree, rule.os)) continue;
         if (hasChild(tree, dir, rule.name)) return @intCast(r);
     }
     return null;
 }
 
-fn forThisOs(os: Os) bool {
+/// Whether a rule for `os` applies to the tree: a WSL distribution's tree,
+/// read on Windows, takes Linux's.
+fn forThisOs(tree: *const scan.Tree, os: Os) bool {
     return switch (os) {
         .any => true,
-        .windows => builtin.os.tag == .windows,
-        .linux => builtin.os.tag == .linux,
+        .windows => !tree.linux,
+        .linux => tree.linux,
     };
 }
 
-/// Names compared as the system does: without case on Windows.
-fn sameName(a: []const u8, b: []const u8) bool {
-    return if (builtin.os.tag == .windows) std.ascii.eqlIgnoreCase(a, b) else std.mem.eql(u8, a, b);
+/// Names compared as the tree's system does: without case on Windows.
+fn sameName(tree: *const scan.Tree, a: []const u8, b: []const u8) bool {
+    return if (tree.linux) std.mem.eql(u8, a, b) else std.ascii.eqlIgnoreCase(a, b);
 }
 
 /// Whether `dir` has a child named `name`; "*.ext" matches any name ending so.
@@ -282,8 +284,8 @@ fn hasChild(tree: *const scan.Tree, dir: u32, name: []const u8) bool {
     for (tree.children(dir), 0..) |_, i| {
         const child = tree.name(node.first_child + @as(u32, @intCast(i)));
         if (suffix) |end| {
-            if (child.len > end.len and sameName(child[child.len - end.len ..], end)) return true;
-        } else if (sameName(child, name)) return true;
+            if (child.len > end.len and sameName(tree, child[child.len - end.len ..], end)) return true;
+        } else if (sameName(tree, child, name)) return true;
     }
     return false;
 }
@@ -296,7 +298,7 @@ fn isUnder(tree: *const scan.Tree, index: u32, chain: []const []const u8) bool {
     var i = chain.len;
     while (i > 0 and at != 0) {
         i -= 1;
-        if (!componentIs(tree.name(at), chain[i])) return false;
+        if (!componentIs(tree, tree.name(at), chain[i])) return false;
         at = tree.node(at).parent;
     }
     // The rest against the scanned folder's path, from its end.
@@ -304,14 +306,14 @@ fn isUnder(tree: *const scan.Tree, index: u32, chain: []const []const u8) bool {
     while (i > 0) {
         i -= 1;
         if (path.len == 0) return false;
-        if (!componentIs(std.fs.path.basename(path), chain[i])) return false;
+        if (!componentIs(tree, std.fs.path.basename(path), chain[i])) return false;
         path = std.fs.path.dirname(path) orelse "";
     }
     return true;
 }
 
-fn componentIs(name: []const u8, want: []const u8) bool {
-    return std.mem.eql(u8, want, "*") or sameName(name, want);
+fn componentIs(tree: *const scan.Tree, name: []const u8, want: []const u8) bool {
+    return std.mem.eql(u8, want, "*") or sameName(tree, name, want);
 }
 
 // ---- Tests ----

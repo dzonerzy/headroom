@@ -22,6 +22,8 @@ test {
     _ = @import("disks.zig");
     _ = @import("ntfs.zig");
     _ = @import("projects.zig");
+    _ = @import("wsl.zig");
+    _ = @import("docker.zig");
 }
 
 fn write(dir: std.Io.Dir, path: []const u8, bytes: usize) !void {
@@ -62,7 +64,7 @@ test "what can go: found, listed, deleted" {
     defer h.stop();
     var map: Map = .{ .window = null, .io = std.testing.io };
     defer map.deinit(std.heap.smp_allocator);
-    var state: App = .{ .io = std.testing.io, .home_path = root, .map = &map, .mft = false };
+    var state: App = .{ .io = std.testing.io, .home_path = root, .map = &map, .mft = false, .docker = false };
     defer state.deinit();
     state.events = h.app.events(App.Events);
     try h.app.bind("App", App, &state);
@@ -110,7 +112,7 @@ test "old projects: the untouched one listed and cleared, the recent one not" {
     defer h.stop();
     var map: Map = .{ .window = null, .io = io };
     defer map.deinit(std.heap.smp_allocator);
-    var state: App = .{ .io = io, .home_path = root, .map = &map, .mft = false };
+    var state: App = .{ .io = io, .home_path = root, .map = &map, .mft = false, .docker = false };
     defer state.deinit();
     state.events = h.app.events(App.Events);
     try h.app.bind("App", App, &state);
@@ -143,6 +145,30 @@ test "old projects: the untouched one listed and cleared, the recent one not" {
     try h.waitUntil("document.querySelectorAll('.stale-project').length === 0");
 }
 
+test "WSL & Docker: the tab, Docker asked once it opens" {
+    const h = try plume.testing.Harness.startProject(@import("plume_project"), .{ .width = 1200, .height = 780 });
+    defer h.stop();
+    var map: Map = .{ .window = null, .io = std.testing.io };
+    defer map.deinit(std.heap.smp_allocator);
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const root = try tmp.dir.realPathFileAlloc(std.testing.io, ".", std.testing.allocator);
+    defer std.testing.allocator.free(root);
+    var state: App = .{ .io = std.testing.io, .home_path = root, .map = &map, .mft = false, .docker = false };
+    defer state.deinit();
+    state.events = h.app.events(App.Events);
+    try h.app.bind("App", App, &state);
+    try h.open();
+
+    // Before any scan, from the deck.
+    try h.click(".control-machine");
+    try h.waitFor(".machine-section");
+    // No Docker here (the tests do not ask the machine's): it says so.
+    try h.waitUntil("document.querySelector('.reclaim')?.textContent.includes('Docker is not installed') === true");
+    try std.testing.expectEqual(@as(u32, 0), try h.evaluate(u32, "document.querySelectorAll('.machine-docker').length"));
+    try shot(h, "machine");
+}
+
 test "what changed since the last scan" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -157,7 +183,7 @@ test "what changed since the last scan" {
     defer h.stop();
     var map: Map = .{ .window = null, .io = std.testing.io };
     defer map.deinit(std.heap.smp_allocator);
-    var state: App = .{ .io = std.testing.io, .home_path = root, .map = &map, .data_dir = data, .mft = false };
+    var state: App = .{ .io = std.testing.io, .home_path = root, .map = &map, .data_dir = data, .mft = false, .docker = false };
     defer state.deinit();
     state.events = h.app.events(App.Events);
     try h.app.bind("App", App, &state);
@@ -170,7 +196,7 @@ test "what changed since the last scan" {
 
     // A folder grows by 80 MB; the next scan says so, where.
     try write(tmp.dir, "scanned/downloads/game.zip", 80 * 1024 * 1024);
-    try h.click(".deck-actions .control:not(.control-main):not(.control-watch)");
+    try h.click(".control-rescan");
     try h.waitFor(".control-changed");
     try std.testing.expect(std.mem.startsWith(u8, try h.text(".control-changed"), "+80"));
     try h.click(".control-changed");
@@ -192,7 +218,7 @@ test "finding by name, and the list" {
     defer h.stop();
     var map: Map = .{ .window = null, .io = std.testing.io };
     defer map.deinit(std.heap.smp_allocator);
-    var state: App = .{ .io = std.testing.io, .home_path = root, .map = &map, .mft = false };
+    var state: App = .{ .io = std.testing.io, .home_path = root, .map = &map, .mft = false, .docker = false };
     defer state.deinit();
     state.events = h.app.events(App.Events);
     try h.app.bind("App", App, &state);
@@ -230,7 +256,7 @@ test "the tray's popover" {
     defer h.stop();
     var map: Map = .{ .window = null, .io = std.testing.io };
     defer map.deinit(std.heap.smp_allocator);
-    var state: App = .{ .io = std.testing.io, .home_path = root, .map = &map, .mft = false };
+    var state: App = .{ .io = std.testing.io, .home_path = root, .map = &map, .mft = false, .docker = false };
     defer state.deinit();
     state.events = h.app.events(App.Events);
     try h.app.bind("App", App, &state);
@@ -285,7 +311,7 @@ test "scanning a folder, opening one of its folders, going back" {
     // As main.zig does, without the layer (headless).
     var map: Map = .{ .window = null, .io = std.testing.io };
     defer map.deinit(std.heap.smp_allocator);
-    var state: App = .{ .io = std.testing.io, .home_path = root, .map = &map, .mft = false };
+    var state: App = .{ .io = std.testing.io, .home_path = root, .map = &map, .mft = false, .docker = false };
     defer state.deinit();
     state.events = h.app.events(App.Events);
     try h.app.bind("App", App, &state);

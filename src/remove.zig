@@ -31,6 +31,9 @@ pub const Error = error{
 pub fn refusal(path: []const u8, home: []const u8, scanned: []const u8) ?[]const u8 {
     if (same(path, scanned)) return "the folder you scanned (delete what is in it instead)";
     if (builtin.os.tag == .windows) {
+        // Inside a WSL distribution: Linux's folders, every user's home.
+        var linux_buffer: [std.fs.max_path_bytes]u8 = undefined;
+        if (wslLinuxPath(&linux_buffer, path)) |linux| return linuxRefusal(linux, true);
         if (path.len <= 3) return "a whole disk";
         const name = std.fs.path.basename(path);
         for ([_][]const u8{ "pagefile.sys", "hiberfil.sys", "swapfile.sys" }) |memory| {
@@ -52,17 +55,45 @@ pub fn refusal(path: []const u8, home: []const u8, scanned: []const u8) ?[]const
             if (same(path, folder) or contains(path, folder)) return "a folder Windows needs";
         }
         if (inside(path, system[0])) return "inside the Windows folder";
-    } else {
-        if (same(path, "/")) return "the whole system";
-        for ([_][]const u8{ "/usr", "/bin", "/sbin", "/lib", "/lib32", "/lib64", "/etc", "/boot", "/var", "/opt", "/home", "/root", "/proc", "/sys", "/dev", "/run", "/snap", "/srv", "/mnt", "/media" }) |folder| {
-            if (same(path, folder) or contains(path, folder)) return "a folder the system needs";
-        }
-        for ([_][]const u8{ "/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc", "/boot" }) |folder| {
-            if (inside(path, folder)) return "part of the system";
-        }
-    }
+    } else if (linuxRefusal(path, false)) |why| return why;
     if (home.len > 0 and (same(path, home) or contains(path, home))) return "your home folder";
     return null;
+}
+
+/// Linux's folders the system needs; with `every_home`, any user's home too
+/// (inside a WSL distribution, where which one is the user's is not known).
+fn linuxRefusal(path: []const u8, every_home: bool) ?[]const u8 {
+    if (same(path, "/")) return "the whole system";
+    for ([_][]const u8{ "/usr", "/bin", "/sbin", "/lib", "/lib32", "/lib64", "/etc", "/boot", "/var", "/opt", "/home", "/root", "/proc", "/sys", "/dev", "/run", "/snap", "/srv", "/mnt", "/media" }) |folder| {
+        if (same(path, folder) or contains(path, folder)) return "a folder the system needs";
+    }
+    for ([_][]const u8{ "/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc", "/boot" }) |folder| {
+        if (inside(path, folder)) return "part of the system";
+    }
+    if (every_home) {
+        const parent = std.fs.path.dirnamePosix(std.mem.trimEnd(u8, path, "/")) orelse "";
+        if (same(parent, "/home")) return "a user's home folder";
+    }
+    return null;
+}
+
+/// A WSL distribution's path as Windows sees it (\\wsl.localhost\<name>\…,
+/// \\wsl$\<name>\…) as the distribution's own ("/usr/lib"); null for others.
+pub fn wslLinuxPath(buffer: []u8, path: []const u8) ?[]const u8 {
+    const rest = for ([_][]const u8{ "\\\\wsl.localhost\\", "\\\\wsl$\\", "//wsl.localhost/", "//wsl$/" }) |prefix| {
+        if (std.ascii.startsWithIgnoreCase(path, prefix)) break path[prefix.len..];
+    } else return null;
+    // After the distribution's name.
+    const at = std.mem.indexOfAny(u8, rest, "\\/") orelse rest.len;
+    const inner = rest[at..];
+    if (inner.len + 1 > buffer.len) return null;
+    buffer[0] = '/';
+    var len: usize = 1;
+    for (std.mem.trimStart(u8, inner, "\\/")) |c| {
+        buffer[len] = if (c == '\\') '/' else c;
+        len += 1;
+    }
+    return buffer[0..len];
 }
 
 /// What deleting `path` breaks that is easy to miss, or null.
@@ -87,7 +118,9 @@ pub fn remove(a: std.mem.Allocator, io: Io, path: []const u8, mode: Mode, home: 
             };
         },
         .trash => switch (builtin.os.tag) {
-            .windows => try recycle(a, path),
+            // The Recycle Bin does not take network paths (a WSL
+            // distribution's): Windows would delete them for good.
+            .windows => if (std.ascii.startsWithIgnoreCase(path, "\\\\")) return error.TrashUnavailable else try recycle(a, path),
             .linux => try trash(a, io, path, home),
             else => return error.TrashUnavailable,
         },
@@ -334,6 +367,22 @@ test "what is refused" {
         try testing.expect(refusal("/home/ada/.cache", home, "/") == null);
         try testing.expect(refusal("/var/lib/docker", home, "/") == null);
     }
+}
+
+test "a WSL distribution's paths, as Linux's" {
+    var buffer: [256]u8 = undefined;
+    try std.testing.expectEqualStrings("/home/ada/web", wslLinuxPath(&buffer, "\\\\wsl.localhost\\Ubuntu\\home\\ada\\web").?);
+    try std.testing.expectEqualStrings("/", wslLinuxPath(&buffer, "\\\\wsl$\\Ubuntu").?);
+    try std.testing.expect(wslLinuxPath(&buffer, "C:\\Users\\ada") == null);
+    if (builtin.os.tag != .windows) return;
+    const scanned = "\\\\wsl.localhost\\Ubuntu";
+    try std.testing.expect(refusal("\\\\wsl.localhost\\Ubuntu\\usr\\lib\\x", "C:\\Users\\ada", scanned) != null);
+    try std.testing.expect(refusal("\\\\wsl.localhost\\Ubuntu\\home\\ada", "C:\\Users\\ada", scanned) != null);
+    try std.testing.expect(refusal("\\\\wsl.localhost\\Ubuntu\\mnt", "C:\\Users\\ada", scanned) != null);
+    try std.testing.expect(refusal("\\\\wsl.localhost\\Ubuntu\\home\\ada\\web\\node_modules", "C:\\Users\\ada", scanned) == null);
+    try std.testing.expect(refusal("\\\\wsl.localhost\\Ubuntu\\var\\lib\\docker", "C:\\Users\\ada", scanned) == null);
+    // No Recycle Bin over the share.
+    try std.testing.expectError(error.TrashUnavailable, remove(std.testing.allocator, std.testing.io, "\\\\wsl.localhost\\Ubuntu\\tmp\\x", .trash, ""));
 }
 
 test "warnings" {

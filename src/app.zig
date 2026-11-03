@@ -13,11 +13,13 @@ const elevate = @import("elevate.zig");
 const removing = @import("remove.zig");
 const rules = @import("rules.zig");
 const projects = @import("projects.zig");
+const wsl = @import("wsl.zig");
+const docker = @import("docker.zig");
 const snapshot = @import("snapshot.zig");
 const disk_list = @import("disks.zig");
 
 pub const App = struct {
-    pub const async_methods = .{ "scan", "remove", "removeMany", "emptyBin" };
+    pub const async_methods = .{ "scan", "scanDistro", "remove", "removeMany", "emptyBin", "compactDistro", "dockerUsage", "dockerPrune" };
     /// main.zig's, not the page's.
     pub const hidden = .{ "startWatching", "menuChosen", "closing" };
 
@@ -41,7 +43,16 @@ pub const App = struct {
         /// Read from the disk's file table (Windows, as administrator):
         /// exact, hard links once.
         from_mft: bool,
+        /// Inside a WSL distribution: what goes is deleted for good (the
+        /// Recycle Bin does not take its files).
+        wsl: bool,
     };
+
+    pub const Distro = wsl.Distro;
+    pub const DockerUsage = docker.Usage;
+    pub const DockerPrune = docker.Prune;
+
+    pub const Compacted = struct { before: u64, after: u64 };
 
     pub const Crumb = struct { node: u32, name: []const u8 };
 
@@ -213,6 +224,9 @@ pub const App = struct {
     /// Windows, as administrator: scans read the disk's file table. The UI
     /// tests turn it off, to check the folder walk whoever runs them.
     mft: bool = true,
+    /// Docker asked through its command line. The UI tests turn it off:
+    /// whether Docker is there, running and quick is the machine's.
+    docker: bool = true,
     /// Counts scans: what a removal was asked about must still be there.
     generation: u32 = 0,
     /// What the rules found in the tree, and those nodes as a set (the map's
@@ -366,20 +380,35 @@ pub const App = struct {
 
     /// Everything under `path`, on a worker thread: "progress" events while
     /// it runs (the intro deepens as files come). Then view(0, ...) shows it.
-    pub fn scan(self: *App, allocator: std.mem.Allocator, path: []const u8) (scanner.Error || error{Busy})!Scanned {
+    pub fn scan(self: *App, allocator: std.mem.Allocator, path: []const u8) (scanner.Error || wsl.Error || error{Busy})!Scanned {
+        return self.scanFrom(allocator, .{ .folder = path });
+    }
+
+    /// Everything inside the WSL distribution `name` (its own find lists
+    /// it), shown as a scan; what goes is deleted through WSL's share.
+    pub fn scanDistro(self: *App, allocator: std.mem.Allocator, name: []const u8) (scanner.Error || wsl.Error || error{Busy})!Scanned {
+        return self.scanFrom(allocator, .{ .distro = name });
+    }
+
+    const Source = union(enum) { folder: []const u8, distro: []const u8 };
+
+    fn scanFrom(self: *App, allocator: std.mem.Allocator, source: Source) (scanner.Error || wsl.Error || error{Busy})!Scanned {
         if (self.scanning.swap(true, .acq_rel)) return error.Busy;
         defer self.scanning.store(false, .release);
         self.cancel.store(false, .monotonic);
-        self.scan_used = if (volume.space(gpa, path)) |s| s.total - s.free else 0;
+        self.scan_used = switch (source) {
+            .folder => |path| if (volume.space(gpa, path)) |s| s.total - s.free else 0,
+            .distro => |name| distroSize(name),
+        };
         self.map.setActivity(4, 2.6, 0);
         defer self.map.setActivity(idle_detail, 1, 0);
 
         const start = std.Io.Clock.awake.now(self.io);
-        var tree = try scanner.scan(gpa, self.io, path, .{
-            .report = .{ .context = self, .call = report },
-            .cancel = &self.cancel,
-            .mft = self.mft,
-        });
+        const progress: scanner.Report = .{ .context = self, .call = report };
+        var tree = switch (source) {
+            .folder => |path| try scanner.scan(gpa, self.io, path, .{ .report = progress, .cancel = &self.cancel, .mft = self.mft }),
+            .distro => |name| try wsl.scanDistro(gpa, self.io, name, progress, &self.cancel),
+        };
         const ms = start.durationTo(std.Io.Clock.awake.now(self.io)).toMilliseconds();
         // What can go, while still on the scan's thread (tens of ms).
         const finds: []const rules.Find = rules.find(gpa, &tree, scanner.Tree.root_index) catch &.{};
@@ -396,6 +425,7 @@ pub const App = struct {
             .unreadable = tree.unreadable,
             .ms = @intCast(@max(ms, 0)),
             .from_mft = tree.from_mft,
+            .wsl = source == .distro,
         };
 
         self.lock.lockUncancelable(self.io);
@@ -440,6 +470,43 @@ pub const App = struct {
     /// Stops a scan running: it fails with Canceled.
     pub fn cancelScan(self: *App) void {
         self.cancel.store(true, .monotonic);
+    }
+
+    /// WSL's distributions and their virtual disks, largest first (none off
+    /// Windows).
+    pub fn distros(self: *App, allocator: std.mem.Allocator) error{OutOfMemory}![]const Distro {
+        _ = self;
+        return wsl.list(allocator) catch |err| switch (err) {
+            error.OutOfMemory => error.OutOfMemory,
+            else => &.{},
+        };
+    }
+
+    /// The distribution `name`'s virtual disk compacted, so Windows gets back
+    /// what was freed inside it. Stops WSL (every distribution) first;
+    /// administrator only. Minutes for a large disk.
+    pub fn compactDistro(self: *App, allocator: std.mem.Allocator, name: []const u8) (wsl.Error || error{ NotAdmin, NotFound, Busy })!Compacted {
+        if (!elevate.isAdmin()) return error.NotAdmin;
+        const found = for (try wsl.list(allocator)) |d| {
+            if (std.mem.eql(u8, d.name, name)) break d;
+        } else return error.NotFound;
+        if (self.scanning.swap(true, .acq_rel)) return error.Busy;
+        defer self.scanning.store(false, .release);
+        const after = try wsl.compact(allocator, self.io, found);
+        return .{ .before = found.size, .after = after };
+    }
+
+    /// What Docker's images, containers, build cache and volumes take.
+    pub fn dockerUsage(self: *App, allocator: std.mem.Allocator) docker.Error!DockerUsage {
+        if (!self.docker) return error.NoDocker;
+        return docker.usage(allocator, self.io);
+    }
+
+    /// Runs a prune (stopped containers, unused images, the build cache);
+    /// what Docker reclaimed, in bytes. Volumes are never pruned.
+    pub fn dockerPrune(self: *App, allocator: std.mem.Allocator, what: DockerPrune) docker.Error!u64 {
+        if (!self.docker) return error.NoDocker;
+        return docker.prune(allocator, self.io, what);
     }
 
     /// The folder `node` on the map: laid out for the map's area (CSS pixels
@@ -1170,6 +1237,16 @@ fn human(buffer: []u8, n: u64) []const u8 {
     if (unit == 0) return std.fmt.bufPrint(buffer, "{d} bytes", .{n}) catch "";
     if (value < 100) return std.fmt.bufPrint(buffer, "{d:.1} {s}", .{ value, units[unit] }) catch "";
     return std.fmt.bufPrint(buffer, "{d:.0} {s}", .{ value, units[unit] }) catch "";
+}
+
+/// What the distribution `name`'s virtual disk takes (0 if unknown): how
+/// far a scan of it has come.
+fn distroSize(name: []const u8) u64 {
+    var arena: std.heap.ArenaAllocator = .init(std.heap.smp_allocator);
+    defer arena.deinit();
+    const list = wsl.list(arena.allocator()) catch return 0;
+    for (list) |d| if (std.mem.eql(u8, d.name, name)) return d.size;
+    return 0;
 }
 
 /// Whether `node` or a folder above it was deleted (its size taken away).
