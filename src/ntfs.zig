@@ -163,6 +163,7 @@ const AttributeIterator = struct {
     }
 };
 
+const AT_STANDARD_INFORMATION = 0x10;
 const AT_ATTRIBUTE_LIST = 0x20;
 const AT_FILE_NAME = 0x30;
 const AT_DATA = 0x80;
@@ -235,6 +236,9 @@ const File = struct {
     used: bool = false,
     dir: bool = false,
     reparse: bool = false,
+    /// Last written, seconds since 1970 ($STANDARD_INFORMATION's: $FILE_NAME's
+    /// times change only with the name).
+    mtime: i64 = 0,
 };
 
 const Link = struct { parent: u32, child: u32, name_start: u32, name_len: u16 };
@@ -303,6 +307,10 @@ fn parseRecord(alloc: Allocator, record: []u8, g: Geometry, number: u32, files: 
     }
     var it = attributes(record);
     while (it.next()) |a| switch (a.kind) {
+        AT_STANDARD_INFORMATION => {
+            const v = a.value() orelse continue;
+            if (v.len >= 0x10) f.mtime = scan.unixSeconds(std.mem.readInt(i64, v[0x08..0x10], .little));
+        },
         AT_FILE_NAME => {
             const v = a.value() orelse continue;
             if (v.len < 0x42) continue;
@@ -400,6 +408,7 @@ fn build(alloc: Allocator, files: []const File, links: []const Link, names: []co
                 .kind = kind,
                 .size = if (first_time and kind != .link) f.size else 0,
                 .files = @intFromBool(first_time and kind == .file),
+                .mtime = f.mtime,
             });
             if (kind == .directory and first_time) try queue.append(alloc, .{ .record = l.child, .node = index });
         }
@@ -509,6 +518,9 @@ test "an NTFS image through its MFT: folders, sizes, a hard link counted once" {
     try testing.expectEqual(@as(u64, 0), tree.node(notes).size);
     // Files: the hard-linked one once (build, same-build: 1), trip, thumb, notes.
     try testing.expectEqual(@as(u64, 4), tree.node(projects).files + tree.node(photos).files);
+    // Modification times from $STANDARD_INFORMATION (the image was made after 2020).
+    try testing.expect(tree.node(trip).mtime > 1_577_836_800);
+    try testing.expect(tree.node(notes).mtime > 1_577_836_800);
 
     // A folder inside, by its names.
     var inner = try read(a, .{ .file = file, .io = io }, "X:\\projects", &.{"PROJECTS"}, .{});

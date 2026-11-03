@@ -1,12 +1,22 @@
 //! Tests' trees, built by hand: (parent, name, kind, size) in breadth-first
 //! order (a folder's children side by side), totals summed as a scan does.
+//! makeTimed takes a fifth element: the entry's mtime (seconds since 1970).
 
 const std = @import("std");
 const scan = @import("scan.zig");
 
 pub const Entry = struct { u32, []const u8, scan.Kind, u64 };
+pub const Timed = struct { u32, []const u8, scan.Kind, u64, i64 };
 
 pub fn make(a: std.mem.Allocator, root: []const u8, entries: []const Entry) !scan.Tree {
+    return build(a, root, entries);
+}
+
+pub fn makeTimed(a: std.mem.Allocator, root: []const u8, entries: []const Timed) !scan.Tree {
+    return build(a, root, entries);
+}
+
+fn build(a: std.mem.Allocator, root: []const u8, entries: anytype) !scan.Tree {
     var tree: scan.Tree = .{ .root = try a.dupeSentinel(u8, root, 0) };
     errdefer tree.deinit(a);
     try tree.names.appendSlice(a, root);
@@ -15,7 +25,8 @@ pub fn make(a: std.mem.Allocator, root: []const u8, entries: []const Entry) !sca
         const index: u32 = @intCast(i + 1);
         const start: u32 = @intCast(tree.names.items.len);
         try tree.names.appendSlice(a, e[1]);
-        try tree.nodes.append(a, .{ .parent = e[0], .name_start = start, .name_len = @intCast(e[1].len), .kind = e[2], .size = e[3], .files = @intFromBool(e[2] == .file) });
+        const mtime: i64 = if (e.len > 4) e[4] else 0;
+        try tree.nodes.append(a, .{ .parent = e[0], .name_start = start, .name_len = @intCast(e[1].len), .kind = e[2], .size = e[3], .files = @intFromBool(e[2] == .file), .mtime = mtime });
         const parent = &tree.nodes.items[e[0]];
         if (parent.child_count == 0) parent.first_child = index;
         parent.child_count += 1;

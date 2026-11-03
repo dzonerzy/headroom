@@ -42,7 +42,15 @@ pub const Node = struct {
     size: u64,
     /// Files under it; 1 for a file.
     files: u64,
+    /// When it was last written, seconds since 1970 (its own: a folder's is
+    /// when its entries last changed); 0 when unknown.
+    mtime: i64 = 0,
 };
+
+/// A Windows FILETIME (100 ns since 1601) as seconds since 1970.
+pub fn unixSeconds(filetime: i64) i64 {
+    return if (filetime <= 0) 0 else @divFloor(filetime, 10_000_000) - 11_644_473_600;
+}
 
 pub const Tree = struct {
     nodes: std.ArrayList(Node) = .empty,
@@ -206,7 +214,7 @@ pub fn scan(a: Allocator, io: Io, path: []const u8, options: Options) Error!Tree
 const Job = struct { index: u32, path: [:0]u8 };
 
 /// A directory's entry as read, before it is in the tree.
-const Entry = struct { name_start: u32, name_len: u32, kind: Kind, size: u64 };
+const Entry = struct { name_start: u32, name_len: u32, kind: Kind, size: u64, mtime: i64 };
 
 const Scan = struct {
     a: Allocator,
@@ -355,6 +363,7 @@ const Scan = struct {
                     .kind = entry.kind,
                     .size = entry.size,
                     .files = @intFromBool(file),
+                    .mtime = entry.mtime,
                 });
             }
             tree.nodes.items[job.index].first_child = first;
@@ -426,6 +435,7 @@ fn listWindows(s: *Scan, dir: Io.Dir, entries: *std.ArrayList(Entry), names: *st
                     .name_len = @intCast(names.items.len - start),
                     .kind = kind,
                     .size = if (kind == .link) 0 else @intCast(@max(info.AllocationSize, 0)),
+                    .mtime = unixSeconds(info.LastWriteTime),
                 });
             }
             if (info.NextEntryOffset == 0) break;
@@ -460,14 +470,14 @@ fn listPosix(s: *Scan, dir: Io.Dir, entries: *std.ArrayList(Entry), names: *std.
         };
         var size: u64 = if (kind == .mount) 0 else found.blocks * 512;
         if (kind == .file and found.nlink > 1 and !try s.firstLink(device(found), found.ino)) size = 0;
-        try entries.append(s.a, .{ .name_start = @intCast(start), .name_len = @intCast(entry.name.len), .kind = kind, .size = size });
+        try entries.append(s.a, .{ .name_start = @intCast(start), .name_len = @intCast(entry.name.len), .kind = kind, .size = size, .mtime = found.mtime.sec });
     }
 }
 
 fn statx(dir: std.posix.fd_t, path: [:0]const u8) ?std.os.linux.Statx {
     const linux = std.os.linux;
     var st: linux.Statx = undefined;
-    const rc = linux.statx(dir, path.ptr, linux.AT.SYMLINK_NOFOLLOW | linux.AT.STATX_DONT_SYNC, .{ .TYPE = true, .NLINK = true, .INO = true, .BLOCKS = true }, &st);
+    const rc = linux.statx(dir, path.ptr, linux.AT.SYMLINK_NOFOLLOW | linux.AT.STATX_DONT_SYNC, .{ .TYPE = true, .NLINK = true, .INO = true, .BLOCKS = true, .MTIME = true }, &st);
     return if (linux.errno(rc) == .SUCCESS) st else null;
 }
 
@@ -570,6 +580,39 @@ test "names beyond ASCII" {
     defer tree.deinit(testing.allocator);
     const folder = find(&tree, Tree.root_index, "Fotografía").?;
     try testing.expect(find(&tree, folder, "日本.jpg") != null);
+}
+
+/// Sets `path`'s modification time (tests: files from a while ago).
+pub fn setMtime(dir: Io.Dir, io: Io, path: []const u8, seconds: i64) !void {
+    var file = try dir.openFile(io, path, .{ .mode = .read_write });
+    defer file.close(io);
+    try file.setTimestamps(io, .{ .modify_timestamp = .{ .new = .{ .nanoseconds = @as(i96, seconds) * std.time.ns_per_s } } });
+}
+
+test "modification times" {
+    const io = testing.io;
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try write(tmp.dir, io, "old/notes.md", 1_000);
+    try write(tmp.dir, io, "new.md", 1_000);
+    // 2024-01-02, and a day later.
+    try setMtime(tmp.dir, io, "old/notes.md", 1_704_153_600);
+    try setMtime(tmp.dir, io, "new.md", 1_704_240_000);
+    const root = try tmp.dir.realPathFileAlloc(io, ".", testing.allocator);
+    defer testing.allocator.free(root);
+    var tree = try scan(testing.allocator, io, root, .{});
+    defer tree.deinit(testing.allocator);
+    const old = find(&tree, Tree.root_index, "old").?;
+    try testing.expectEqual(@as(i64, 1_704_153_600), tree.node(find(&tree, old, "notes.md").?).mtime);
+    try testing.expectEqual(@as(i64, 1_704_240_000), tree.node(find(&tree, Tree.root_index, "new.md").?).mtime);
+    // A folder has its own: when its entries changed (now, roughly).
+    try testing.expect(tree.node(old).mtime > 1_704_240_000);
+}
+
+test "unixSeconds" {
+    try testing.expectEqual(@as(i64, 0), unixSeconds(0));
+    // 2024-01-02 00:00 UTC as a FILETIME.
+    try testing.expectEqual(@as(i64, 1_704_153_600), unixSeconds(133_486_272_000_000_000));
 }
 
 test "canceled" {

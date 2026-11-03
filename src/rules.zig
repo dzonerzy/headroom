@@ -77,6 +77,21 @@ pub const rules = [_]Rule{
     .{ .id = "web-build", .title = "Web framework build caches", .why = "Next.js, Nuxt, SvelteKit, Parcel, Turborepo and Angular build them again.", .risk = .safe, .action = .delete, .name = ".parcel-cache", .beside = "package.json" },
     .{ .id = "web-build", .title = "Web framework build caches", .why = "Next.js, Nuxt, SvelteKit, Parcel, Turborepo and Angular build them again.", .risk = .safe, .action = .delete, .name = ".turbo", .beside = "package.json" },
     .{ .id = "web-build", .title = "Web framework build caches", .why = "Next.js, Nuxt, SvelteKit, Parcel, Turborepo and Angular build them again.", .risk = .safe, .action = .delete, .name = ".angular", .beside = "package.json" },
+    .{ .id = "unity", .title = "Unity's Library folders", .why = "What Unity imported from the project's assets: imported again when the project is opened (which takes a while).", .risk = .rebuild, .action = .delete, .name = "Library", .beside = "ProjectSettings" },
+    .{ .id = "unreal", .title = "Unreal Engine's build caches", .why = "Intermediate files and derived data of an Unreal project: built again by the editor and the next build.", .risk = .rebuild, .action = .delete, .name = "Intermediate", .beside = "*.uproject" },
+    .{ .id = "unreal", .title = "Unreal Engine's build caches", .why = "Intermediate files and derived data of an Unreal project: built again by the editor and the next build.", .risk = .rebuild, .action = .delete, .name = "DerivedDataCache", .beside = "*.uproject" },
+    .{ .id = "godot", .title = "Godot's import caches (.godot)", .why = "What Godot imported from the project: imported again when the project is opened.", .risk = .rebuild, .action = .delete, .name = ".godot", .beside = "project.godot" },
+    .{ .id = "dotnet", .title = ".NET build output (bin, obj)", .why = "Compiled assemblies and intermediate files: built again by dotnet build or Visual Studio.", .risk = .rebuild, .action = .delete, .command = "dotnet build", .name = "bin", .beside = "*.csproj" },
+    .{ .id = "dotnet", .title = ".NET build output (bin, obj)", .why = "Compiled assemblies and intermediate files: built again by dotnet build or Visual Studio.", .risk = .rebuild, .action = .delete, .command = "dotnet build", .name = "obj", .beside = "*.csproj" },
+    .{ .id = "dotnet", .title = ".NET build output (bin, obj)", .why = "Compiled assemblies and intermediate files: built again by dotnet build or Visual Studio.", .risk = .rebuild, .action = .delete, .command = "dotnet build", .name = "bin", .beside = "*.fsproj" },
+    .{ .id = "dotnet", .title = ".NET build output (bin, obj)", .why = "Compiled assemblies and intermediate files: built again by dotnet build or Visual Studio.", .risk = .rebuild, .action = .delete, .command = "dotnet build", .name = "obj", .beside = "*.fsproj" },
+    .{ .id = "dotnet", .title = ".NET build output (bin, obj)", .why = "Compiled assemblies and intermediate files: built again by dotnet build or Visual Studio.", .risk = .rebuild, .action = .delete, .command = "dotnet build", .name = "bin", .beside = "*.vbproj" },
+    .{ .id = "dotnet", .title = ".NET build output (bin, obj)", .why = "Compiled assemblies and intermediate files: built again by dotnet build or Visual Studio.", .risk = .rebuild, .action = .delete, .command = "dotnet build", .name = "obj", .beside = "*.vbproj" },
+    .{ .id = "visual-studio", .title = "Visual Studio's solution caches (.vs)", .why = "IntelliSense databases and the solution's window layout: made again when the solution is opened (breakpoints and open files are forgotten).", .risk = .rebuild, .action = .delete, .name = ".vs", .beside = "*.sln" },
+    .{ .id = "vcpkg-installed", .title = "vcpkg's installed packages (vcpkg_installed)", .why = "Libraries vcpkg built for a project: built again (or restored from vcpkg's binary cache) by the next configure.", .risk = .rebuild, .action = .delete, .name = "vcpkg_installed", .beside = "vcpkg.json" },
+    .{ .id = "vcpkg-trees", .title = "vcpkg's build trees and downloads", .why = "Sources and intermediate builds vcpkg keeps in its checkout: downloaded and built again when a package is built.", .risk = .rebuild, .action = .delete, .name = "buildtrees", .beside = ".vcpkg-root" },
+    .{ .id = "vcpkg-trees", .title = "vcpkg's build trees and downloads", .why = "Sources and intermediate builds vcpkg keeps in its checkout: downloaded and built again when a package is built.", .risk = .rebuild, .action = .delete, .name = "downloads", .beside = ".vcpkg-root" },
+    .{ .id = "vcpkg-trees", .title = "vcpkg's build trees and downloads", .why = "Sources and intermediate builds vcpkg keeps in its checkout: downloaded and built again when a package is built.", .risk = .rebuild, .action = .delete, .name = "packages", .beside = ".vcpkg-root" },
 
     // ---- Package managers' caches ----
     .{ .id = "zig-global", .title = "Zig's global cache", .why = "Packages and compiled pieces Zig keeps for every project: fetched and built again as needed.", .risk = .safe, .action = .delete, .name = "zig", .under = &.{ "AppData", "Local" }, .os = .windows },
@@ -94,6 +109,28 @@ pub const rules = [_]Rule{
     .{ .id = "gradle", .title = "Gradle's caches", .why = "Dependencies and builds Gradle keeps; fetched and made again.", .risk = .safe, .action = .delete, .name = "caches", .under = &.{".gradle"} },
     .{ .id = "maven", .title = "Maven's repository", .why = "Dependencies Maven downloaded; fetched again by the next build.", .risk = .safe, .action = .delete, .name = "repository", .under = &.{".m2"} },
     .{ .id = "nuget", .title = "NuGet's packages", .why = "Packages .NET restored; restored again by dotnet restore.", .risk = .safe, .action = .command, .command = "dotnet nuget locals all --clear", .name = "packages", .under = &.{".nuget"} },
+    .{ .id = "uv-cache", .title = "uv's cache", .why = "Python packages uv downloaded and built; fetched again when needed.", .risk = .safe, .action = .command, .command = "uv cache clean", .name = "uv", .under = &.{".cache"}, .os = .linux },
+    .{ .id = "uv-cache", .title = "uv's cache", .why = "Python packages uv downloaded and built; fetched again when needed.", .risk = .safe, .action = .command, .command = "uv cache clean", .name = "cache", .under = &.{ "Local", "uv" }, .os = .windows },
+    .{ .id = "conda-pkgs", .title = "Conda's package cache", .why = "Packages conda downloaded and unpacked; the environments keep what they use.", .risk = .safe, .action = .command, .command = "conda clean --all", .name = "pkgs", .under = &.{"miniconda3"} },
+    .{ .id = "conda-pkgs", .title = "Conda's package cache", .why = "Packages conda downloaded and unpacked; the environments keep what they use.", .risk = .safe, .action = .command, .command = "conda clean --all", .name = "pkgs", .under = &.{"anaconda3"} },
+    .{ .id = "conda-pkgs", .title = "Conda's package cache", .why = "Packages conda downloaded and unpacked; the environments keep what they use.", .risk = .safe, .action = .command, .command = "conda clean --all", .name = "pkgs", .under = &.{"miniforge3"} },
+    .{ .id = "poetry-cache", .title = "Poetry's cache", .why = "Packages Poetry downloaded; fetched again when needed.", .risk = .safe, .action = .delete, .name = "cache", .under = &.{ ".cache", "pypoetry" }, .os = .linux },
+    .{ .id = "poetry-cache", .title = "Poetry's cache", .why = "Packages Poetry downloaded; fetched again when needed.", .risk = .safe, .action = .delete, .name = "Cache", .under = &.{ "Local", "pypoetry" }, .os = .windows },
+    .{ .id = "bun-cache", .title = "Bun's install cache", .why = "Packages Bun downloaded; fetched again when needed.", .risk = .safe, .action = .command, .command = "bun pm cache rm", .name = "cache", .under = &.{ ".bun", "install" } },
+    .{ .id = "deno-cache", .title = "Deno's cache", .why = "Modules and compiled code Deno keeps; fetched and made again.", .risk = .safe, .action = .delete, .name = "deno", .under = &.{".cache"}, .os = .linux },
+    .{ .id = "deno-cache", .title = "Deno's cache", .why = "Modules and compiled code Deno keeps; fetched and made again.", .risk = .safe, .action = .delete, .name = "deno", .under = &.{ "AppData", "Local" }, .os = .windows },
+    .{ .id = "compiler-cache", .title = "Compiler caches (ccache, sccache)", .why = "Compiled objects kept to build faster: builds fill them again (the next ones are slower).", .risk = .safe, .action = .delete, .name = "ccache", .under = &.{".cache"}, .os = .linux },
+    .{ .id = "compiler-cache", .title = "Compiler caches (ccache, sccache)", .why = "Compiled objects kept to build faster: builds fill them again (the next ones are slower).", .risk = .safe, .action = .delete, .name = "ccache", .under = &.{ "AppData", "Local" }, .os = .windows },
+    .{ .id = "compiler-cache", .title = "Compiler caches (ccache, sccache)", .why = "Compiled objects kept to build faster: builds fill them again (the next ones are slower).", .risk = .safe, .action = .delete, .name = "sccache", .under = &.{".cache"}, .os = .linux },
+    .{ .id = "compiler-cache", .title = "Compiler caches (ccache, sccache)", .why = "Compiled objects kept to build faster: builds fill them again (the next ones are slower).", .risk = .safe, .action = .delete, .name = "sccache", .under = &.{ "Local", "Mozilla" }, .os = .windows },
+    .{ .id = "bazel-cache", .title = "Bazel's output and cache", .why = "Everything Bazel built and downloaded: built and fetched again by the next build.", .risk = .rebuild, .action = .command, .command = "bazel clean --expunge", .name = "bazel", .under = &.{".cache"}, .os = .linux },
+    .{ .id = "jetbrains-caches", .title = "JetBrains IDEs' caches", .why = "Indexes and caches of IntelliJ, PyCharm, CLion and the others: made again when a project is opened (indexing takes a while).", .risk = .safe, .action = .delete, .name = "caches", .under = &.{ "Local", "JetBrains", "*" }, .os = .windows },
+    .{ .id = "jetbrains-caches", .title = "JetBrains IDEs' caches", .why = "Indexes and caches of IntelliJ, PyCharm, CLion and the others: made again when a project is opened (indexing takes a while).", .risk = .safe, .action = .delete, .name = "caches", .under = &.{ ".cache", "JetBrains", "*" }, .os = .linux },
+
+    // ---- AI models ----
+    .{ .id = "huggingface", .title = "Hugging Face's models and datasets", .why = "Models and datasets downloaded by transformers, diffusers and the Hub: downloaded again when used, often gigabytes each.", .risk = .careful, .action = .delete, .name = "huggingface", .under = &.{".cache"} },
+    .{ .id = "ollama", .title = "Ollama's models", .why = "Every model ollama pulled: ollama pull downloads one again (gigabytes each). ollama rm removes one.", .risk = .careful, .action = .show, .command = "ollama list", .name = "models", .under = &.{".ollama"} },
+    .{ .id = "torch-hub", .title = "PyTorch's downloaded models", .why = "Pretrained weights torch.hub and torchvision downloaded: downloaded again when used.", .risk = .careful, .action = .delete, .name = "torch", .under = &.{".cache"} },
 
     // ---- Virtual disks: their tools ----
     .{ .id = "docker-disk", .title = "Docker Desktop's disk", .why = "Every image, container and volume of Docker Desktop. Prune what is unused (it removes stopped containers and unused images); the disk file shrinks once Docker compacts it.", .risk = .careful, .action = .command, .command = "docker system prune --all", .kind = .file, .name = "docker_data.vhdx", .os = .windows },
@@ -114,6 +151,10 @@ pub const rules = [_]Rule{
     .{ .id = "thumbnails", .title = "Thumbnails", .why = "Pictures' thumbnails the file manager made: made again when needed.", .risk = .safe, .action = .delete, .name = "thumbnails", .under = &.{".cache"}, .os = .linux },
     .{ .id = "apt", .title = "Downloaded packages (apt)", .why = "Packages apt downloaded and installed already.", .risk = .safe, .action = .command, .command = "sudo apt clean", .name = "archives", .under = &.{ "cache", "apt" }, .os = .linux },
     .{ .id = "journal", .title = "The system journal", .why = "The system's logs: vacuum keeps the newest.", .risk = .safe, .action = .command, .command = "sudo journalctl --vacuum-size=200M", .name = "journal", .under = &.{ "var", "log" }, .os = .linux },
+    .{ .id = "snap-revisions", .title = "Snap packages' old revisions", .why = "snapd keeps the previous revisions of each snap to go back; the disabled ones can go.", .risk = .safe, .action = .command, .command = "snap list --all | awk '/disabled/{print $1, $3}' | while read n r; do sudo snap remove \"$n\" --revision=\"$r\"; done", .name = "snaps", .under = &.{ "var", "lib", "snapd" }, .os = .linux },
+    .{ .id = "flatpak-unused", .title = "Flatpak's unused runtimes", .why = "Runtimes no installed application uses any more.", .risk = .safe, .action = .command, .command = "flatpak uninstall --unused", .name = "flatpak", .under = &.{ "var", "lib" }, .os = .linux },
+    .{ .id = "windows-update", .title = "Windows Update's downloads", .why = "Updates Windows downloaded and installed already. Disk Cleanup removes them (Clean up system files: Windows Update Cleanup, Delivery Optimization Files).", .risk = .safe, .action = .show, .command = "cleanmgr", .name = "Download", .under = &.{ "Windows", "SoftwareDistribution" }, .os = .windows },
+    .{ .id = "windows-update", .title = "Windows Update's downloads", .why = "Updates Windows downloaded and installed already. Disk Cleanup removes them (Clean up system files: Windows Update Cleanup, Delivery Optimization Files).", .risk = .safe, .action = .show, .command = "cleanmgr", .name = "DeliveryOptimization", .under = &.{ "Local", "Microsoft", "Windows" }, .os = .windows },
 };
 
 /// A rule matched in the tree.
@@ -234,10 +275,15 @@ fn sameName(a: []const u8, b: []const u8) bool {
     return if (builtin.os.tag == .windows) std.ascii.eqlIgnoreCase(a, b) else std.mem.eql(u8, a, b);
 }
 
+/// Whether `dir` has a child named `name`; "*.ext" matches any name ending so.
 fn hasChild(tree: *const scan.Tree, dir: u32, name: []const u8) bool {
     const node = tree.node(dir);
+    const suffix: ?[]const u8 = if (name.len > 1 and name[0] == '*') name[1..] else null;
     for (tree.children(dir), 0..) |_, i| {
-        if (sameName(tree.name(node.first_child + @as(u32, @intCast(i))), name)) return true;
+        const child = tree.name(node.first_child + @as(u32, @intCast(i)));
+        if (suffix) |end| {
+            if (child.len > end.len and sameName(child[child.len - end.len ..], end)) return true;
+        } else if (sameName(child, name)) return true;
     }
     return false;
 }
@@ -309,6 +355,79 @@ test "projects: node_modules once, target beside Cargo.toml, a CMake tree" {
     for (finds) |f| try testing.expect(f.node != 9 and f.node != 15);
     // The node_modules found holds the nested one's size.
     for (finds) |f| if (f.node == 6) try testing.expectEqual(@as(u64, 9_000), tree.node(6).size);
+}
+
+test "game engines, .NET, vcpkg and Visual Studio: by the project files beside" {
+    const a = testing.allocator;
+    var tree = try testtree.make(a, "/home/ada", &.{
+        .{ 0, "game", .directory, 0 }, // 1: Unity
+        .{ 0, "shooter", .directory, 0 }, // 2: Unreal
+        .{ 0, "app", .directory, 0 }, // 3: .NET
+        .{ 0, "tools", .directory, 0 }, // 4: a bin with no project: not .NET's
+        .{ 0, "vcpkg", .directory, 0 }, // 5: a vcpkg checkout
+        .{ 0, "photos", .directory, 0 }, // 6: a Library with no ProjectSettings
+        .{ 1, "ProjectSettings", .directory, 0 }, // 7
+        .{ 1, "Library", .directory, 0 }, // 8
+        .{ 2, "Shooter.uproject", .file, 1_000 }, // 9
+        .{ 2, "Intermediate", .directory, 0 }, // 10
+        .{ 2, "DerivedDataCache", .directory, 0 }, // 11
+        .{ 3, "App.csproj", .file, 1_000 }, // 12
+        .{ 3, "App.sln", .file, 1_000 }, // 13
+        .{ 3, "bin", .directory, 0 }, // 14
+        .{ 3, "obj", .directory, 0 }, // 15
+        .{ 3, ".vs", .directory, 0 }, // 16
+        .{ 4, "bin", .directory, 0 }, // 17
+        .{ 5, ".vcpkg-root", .file, 10 }, // 18
+        .{ 5, "buildtrees", .directory, 0 }, // 19
+        .{ 5, "downloads", .directory, 0 }, // 20
+        .{ 6, "Library", .directory, 0 }, // 21
+        .{ 8, "artifacts.db", .file, 5_000 }, // 22
+        .{ 14, "App.dll", .file, 5_000 }, // 23
+        .{ 17, "tool.exe", .file, 5_000 }, // 24
+        .{ 21, "img.jpg", .file, 5_000 }, // 25
+    });
+    defer tree.deinit(a);
+    const finds = try find(a, &tree, 0);
+    defer a.free(finds);
+    const want = [_]struct { u32, []const u8 }{
+        .{ 8, "unity" },         .{ 10, "unreal" },     .{ 11, "unreal" },
+        .{ 14, "dotnet" },       .{ 15, "dotnet" },     .{ 16, "visual-studio" },
+        .{ 19, "vcpkg-trees" }, .{ 20, "vcpkg-trees" },
+    };
+    try testing.expectEqual(want.len, finds.len);
+    for (want) |w| {
+        const f = for (finds) |f| {
+            if (f.node == w[0]) break f;
+        } else return error.TestExpectedEqual;
+        try testing.expectEqualStrings(w[1], rules[f.rule].id);
+    }
+    // The near-misses: a bin with no project file, a Library with no ProjectSettings.
+    for (finds) |f| try testing.expect(f.node != 17 and f.node != 21);
+}
+
+test "AI models' caches" {
+    const a = testing.allocator;
+    var tree = try testtree.make(a, "/home/ada", &.{
+        .{ 0, ".cache", .directory, 0 }, // 1
+        .{ 0, ".ollama", .directory, 0 }, // 2
+        .{ 0, "models", .directory, 0 }, // 3: not under .ollama
+        .{ 1, "huggingface", .directory, 0 }, // 4
+        .{ 1, "torch", .directory, 0 }, // 5
+        .{ 2, "models", .directory, 0 }, // 6
+        .{ 3, "mine.bin", .file, 10 }, // 7
+        .{ 4, "model.safetensors", .file, 5_000 }, // 8
+        .{ 5, "resnet.pth", .file, 5_000 }, // 9
+        .{ 6, "blob", .file, 5_000 }, // 10
+    });
+    defer tree.deinit(a);
+    const finds = try find(a, &tree, 0);
+    defer a.free(finds);
+    try testing.expectEqualStrings("huggingface", ruleOf(&tree, finds, "huggingface").?);
+    try testing.expectEqualStrings("torch-hub", ruleOf(&tree, finds, "torch").?);
+    for (finds) |f| try testing.expect(f.node != 3);
+    try testing.expect(for (finds) |f| {
+        if (f.node == 6) break std.mem.eql(u8, rules[f.rule].id, "ollama");
+    } else false);
 }
 
 test "caches by place" {
