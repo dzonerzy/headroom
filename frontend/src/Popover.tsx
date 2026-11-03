@@ -179,7 +179,7 @@ function Arc({ used, sweep, alarm }: { used: number; sweep: number; alarm: numbe
   const first = 90 + SWEEP / 2;
   const alarmAt = first - clipFrom * (step + GAP) + GAP / 2;
   return (
-    <svg className="arc" viewBox="-12 0 324 206" role="presentation">
+    <svg className="arc" viewBox="-12 0 324 206" role="presentation" data-level={target} data-lit={lit}>
       <defs>
         <filter id="arc-glow" x="-20%" y="-20%" width="140%" height="140%">
           <feGaussianBlur stdDeviation="2.4" result="blur" />

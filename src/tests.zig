@@ -185,10 +185,12 @@ test "the tray's popover" {
     try h.waitFor(".popover");
     try std.testing.expect((try h.text(".popover-figure .figure-value")).len > 0);
     try std.testing.expect(std.mem.startsWith(u8, try h.text(".popover-caption"), "headroom, "));
-    // The arc: 40 segments, the used share lit as its sweep goes (on the
-    // page's own clock: waited for).
+    // The arc: 40 segments, the used share lit once its sweep is done (on
+    // the page's own clock: waited for). The share is the real disk's: a
+    // nearly empty one (CI's) lights none.
     try std.testing.expectEqual(@as(u32, 40), try h.evaluate(u32, "document.querySelectorAll('.arc-segment').length"));
-    try h.waitUntil("document.querySelectorAll('.arc-segment[data-on]').length >= 1");
+    try h.waitUntil("(a => a.dataset.lit === a.dataset.level)(document.querySelector('.arc'))");
+    try std.testing.expect(try h.evaluate(bool, "document.querySelectorAll('.arc-segment[data-on]').length === Number(document.querySelector('.arc').dataset.level)"));
     try h.expectText(".popover-entry:first-child .popover-name", "games");
     try std.testing.expectEqual(@as(u32, 3), try h.evaluate(u32, "document.querySelectorAll('.popover-entry').length"));
     try shot(h, "popover");
