@@ -133,6 +133,24 @@ export interface Place {
   parent: number;
 }
 
+export interface Stale {
+  projects: StaleProject[];
+  size: number;
+  cutoff: number;
+  generation: number;
+}
+
+export interface StaleProject {
+  node: number;
+  name: string;
+  path: string;
+  parent: number;
+  last_touched: number;
+  size: number;
+  items: Place[];
+  nodes: number[];
+}
+
 export type Mode = "trash" | "permanent";
 
 export interface Cleaned {
@@ -207,14 +225,15 @@ export interface AppErrors {
   view: "OutOfMemory" | "NoScan" | "NotAFolder";
   hover: "OutOfMemory";
   reclaimable: "OutOfMemory";
+  stale: "OutOfMemory";
   showReclaimable: never;
   highlight: never;
-  removeMany: "NoScan" | "Stale";
-  emptyBin: "AccessDenied" | "Canceled" | "OutOfMemory" | "FileNotFound" | "NotDir" | "NoScan" | "Stale" | "InUse" | "NotFound" | "TrashUnavailable" | "Failed";
+  removeMany: "Stale" | "NoScan";
+  emptyBin: "AccessDenied" | "Canceled" | "OutOfMemory" | "Stale" | "FileNotFound" | "NotDir" | "NoScan" | "InUse" | "NotFound" | "TrashUnavailable" | "Failed";
   search: "OutOfMemory";
   entries: "OutOfMemory" | "NoScan";
   removal: "OutOfMemory" | "NoScan" | "NotFound";
-  remove: "AccessDenied" | "OutOfMemory" | "NoScan" | "Stale" | "InUse" | "NotFound" | "TrashUnavailable" | "Failed" | "Refused";
+  remove: "AccessDenied" | "OutOfMemory" | "Stale" | "NoScan" | "InUse" | "NotFound" | "TrashUnavailable" | "Failed" | "Refused";
   watching: never;
   setWatching: "Unsupported";
   watchTick: never;
@@ -248,6 +267,8 @@ export interface AppBindings {
   hover(arg1: number, arg2: number): Item | null;
   /** Fails with PlumeError<AppErrors["reclaimable"]>. */
   reclaimable(): Reclaim | null;
+  /** Fails with PlumeError<AppErrors["stale"]>. */
+  stale(arg1: number): Stale | null;
   showReclaimable(arg1: boolean): void;
   highlight(arg1: number): boolean;
   /** Fails with PlumeError<AppErrors["removeMany"]>. */
@@ -466,6 +487,9 @@ export const App: AppBindings = {
   },
   reclaimable() {
     try { return native.reclaimable(); } catch (error) { throw plumeError(error); }
+  },
+  stale(arg1) {
+    try { return native.stale(arg1); } catch (error) { throw plumeError(error); }
   },
   showReclaimable(arg1) {
     try { return native.showReclaimable(arg1); } catch (error) { throw plumeError(error); }
