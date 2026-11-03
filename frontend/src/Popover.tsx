@@ -72,7 +72,8 @@ export default function Popover() {
       </section>
 
       <div className="popover-alarm">
-        <span>{low ? `Less than ${alarm}% is free. Tell me below` : "Tell me below"}</span>
+        {low && <p className="popover-warning">Less than {alarm}% of {drive} is free.</p>}
+        <span className="popover-alarm-label">Tell me below</span>
         <span className="popover-choices" role="radiogroup" aria-label="Alarm below">
           {ALARMS.map((percent) => (
             <button

@@ -195,6 +195,18 @@ test "the tray's popover" {
     try h.click(".popover-choice:nth-child(4)");
     try h.waitUntil("document.querySelector('.popover-choice[aria-checked=true]')?.textContent === '20%'");
     try std.testing.expectEqual(@as(u8, 20), state.alarm());
+    // The label and the choices on one line; the warning (the disk below
+    // the alarm) on its own line above them, not beside them.
+    try std.testing.expect(try h.evaluate(bool,
+        \\(() => {
+        \\  const label = document.querySelector('.popover-alarm-label').getBoundingClientRect();
+        \\  const choices = document.querySelector('.popover-choices').getBoundingClientRect();
+        \\  const warning = document.querySelector('.popover-warning')?.getBoundingClientRect();
+        \\  const oneLine = Math.abs((label.top + label.bottom) - (choices.top + choices.bottom)) < 4 && label.right <= choices.left;
+        \\  return oneLine && (!warning || warning.bottom <= Math.min(label.top, choices.top));
+        \\})()
+    ));
+    try shot(h, "popover-alarm");
 }
 
 test "scanning a folder, opening one of its folders, going back" {
