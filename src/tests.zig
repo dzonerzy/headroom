@@ -91,6 +91,19 @@ test "what can go: found, listed, deleted" {
     try tmp.dir.access(std.testing.io, "web/package.json", .{});
     try h.waitUntil("document.querySelectorAll('.reclaim-group').length === 1");
     try h.waitUntil("document.querySelector('.notice')?.textContent.startsWith('Deleted 1 place') === true");
+
+    // The legend's sizes for the top, kept since the scan, lost the deleted
+    // files (the only source code there was) as a new walk sees it.
+    const a = h.arena.allocator();
+    const kept = (try state.view(a, 0, 0, 0, 800, 600, 1)).legend;
+    state.top_kinds = null;
+    const fresh = (try state.view(a, 0, 0, 0, 800, 600, 1)).legend;
+    try std.testing.expectEqual(fresh.len, kept.len);
+    for (kept, fresh) |k, f| {
+        try std.testing.expectEqualStrings(f.name, k.name);
+        try std.testing.expectEqual(f.size, k.size);
+        try std.testing.expect(!std.mem.eql(u8, k.name, "Source code"));
+    }
 }
 
 test "old projects: the untouched one listed and cleared, the recent one not" {

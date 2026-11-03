@@ -245,6 +245,10 @@ pub const App = struct {
     tree: ?scanner.Tree = null,
     layout: ?treemap.Layout = null,
     root: u32 = 0,
+    /// The legend's sizes by kind: the folder scanned's, made on the scan's
+    /// thread and kept up with removals (going back to the top costs
+    /// nothing), and the last other folder shown's.
+    top_kinds: ?[categories.count]u64 = null,
     legend_root: ?u32 = null,
     legend_sizes: [categories.count]u64 = @splat(0),
     cancel: std.atomic.Value(bool) = .init(false),
@@ -262,6 +266,10 @@ pub const App = struct {
     finds: []const rules.Find = &.{},
     found: std.DynamicBitSetUnmanaged = .{},
     marks_shown: bool = false,
+    /// Every project with something to clear (stale's list, filtered by age
+    /// when asked), found on the scan's thread, in its own arena.
+    project_list: []const projects.Project = &.{},
+    projects_arena: ?std.heap.ArenaAllocator = null,
     /// Where snapshots are kept (null: not kept); what changed since the
     /// scanned folder's previous scan, in its own arena.
     data_dir: ?[]const u8 = null,
@@ -321,6 +329,7 @@ pub const App = struct {
         gpa.free(self.finds);
         self.found.deinit(gpa);
         if (self.changes_arena) |*arena| arena.deinit();
+        if (self.projects_arena) |*arena| arena.deinit();
         dupes.free(gpa, self.duplicate_groups);
         for (self.alarmed.items) |path| gpa.free(path);
         self.alarmed.deinit(gpa);
@@ -469,6 +478,15 @@ pub const App = struct {
         const finds: []const rules.Find = rules.find(gpa, &tree, scanner.Tree.root_index) catch &.{};
         var found = std.DynamicBitSetUnmanaged.initEmpty(gpa, tree.nodes.items.len) catch std.DynamicBitSetUnmanaged{};
         if (found.bit_length > 0) for (finds) |f| found.set(f.node);
+        // The projects with something to clear, and the legend's sizes for
+        // the top: hundreds of ms on a whole disk, not on the page's thread.
+        var projects_arena: std.heap.ArenaAllocator = .init(gpa);
+        errdefer projects_arena.deinit();
+        const project_list: []const projects.Project = projects.all(projects_arena.allocator(), &tree, scanner.Tree.root_index, finds) catch &.{};
+        var top_kinds: ?[categories.count]u64 = @splat(0);
+        kindsUnder(&tree, scanner.Tree.root_index, &top_kinds.?, .add) catch {
+            top_kinds = null;
+        };
         // What changed since this folder's last scan; this one kept.
         const compared = self.compareAndKeep(&tree);
         // The folder to scan again when its disk loses space fast.
@@ -500,6 +518,10 @@ pub const App = struct {
         self.finds = finds;
         self.found.deinit(gpa);
         self.found = found;
+        if (self.projects_arena) |*arena| arena.deinit();
+        self.projects_arena = projects_arena;
+        self.project_list = project_list;
+        self.top_kinds = top_kinds;
         if (self.changes_arena) |*arena| arena.deinit();
         self.changes_arena = null;
         self.changes = null;
@@ -810,27 +832,42 @@ pub const App = struct {
         const tree = &(self.tree orelse return null);
         const now = @divFloor(std.Io.Clock.real.now(self.io).toMilliseconds(), 1000);
         const cutoff = now - @as(i64, days) * 24 * 3600;
-        const found = try projects.stale(allocator, tree, scanner.Tree.root_index, self.finds, cutoff);
-        const list = try allocator.alloc(StaleProject, found.len);
+        // The projects found after the scan, old enough, with what is still
+        // there to clear (cleared finds have no size left).
+        var list: std.ArrayList(StaleProject) = .empty;
         var total: u64 = 0;
-        for (found, list) |p, *out| {
-            const items = try allocator.alloc(Place, p.finds.len);
-            for (p.finds, items) |node, *item| {
-                item.* = .{ .node = node, .path = try relative(allocator, tree, node), .size = tree.node(node).size, .parent = tree.node(node).parent };
+        for (self.project_list) |p| {
+            if (!projects.untouchedSince(p, cutoff)) continue;
+            var items: std.ArrayList(Place) = .empty;
+            var nodes: std.ArrayList(u32) = .empty;
+            var size: u64 = 0;
+            for (p.finds) |node| {
+                const n = tree.node(node);
+                if (n.size == 0 or gone(tree, node)) continue;
+                try items.append(allocator, .{ .node = node, .path = try relative(allocator, tree, node), .size = n.size, .parent = n.parent });
+                try nodes.append(allocator, node);
+                size += n.size;
             }
-            out.* = .{
+            if (size == 0) continue;
+            try list.append(allocator, .{
                 .node = p.node,
                 .name = tree.name(p.node),
                 .path = try relative(allocator, tree, p.node),
                 .parent = tree.node(p.node).parent,
                 .last_touched = p.last_touched,
-                .size = p.size,
-                .items = items,
-                .nodes = p.finds,
-            };
-            total += p.size;
+                .size = size,
+                .items = items.items,
+                .nodes = nodes.items,
+            });
+            total += size;
         }
-        return .{ .projects = list, .size = total, .cutoff = cutoff, .generation = self.generation };
+        // Largest first, by what is left.
+        std.mem.sort(StaleProject, list.items, {}, struct {
+            fn larger(_: void, l: StaleProject, r: StaleProject) bool {
+                return l.size > r.size;
+            }
+        }.larger);
+        return .{ .projects = list.items, .size = total, .cutoff = cutoff, .generation = self.generation };
     }
 
     /// What the rules found shown on the map (the rest dimmed), or not.
@@ -905,6 +942,9 @@ pub const App = struct {
         defer self.lock.unlock(self.io);
         const tree = &(self.tree orelse return error.NoScan);
         if (generation != self.generation) return error.Stale;
+        // Its files leave the top's legend (what is left there is no longer
+        // listed: not counted by kind, as a new walk would not).
+        self.forgetKinds(tree, node);
         const n = &tree.nodes.items[node];
         const freed: Removed = .{ .size = n.size -| now.size, .files = n.files -| now.files };
         n.size = now.size;
@@ -1068,6 +1108,7 @@ pub const App = struct {
         defer self.lock.unlock(self.io);
         const tree = &(self.tree orelse return error.NoScan);
         if (generation != self.generation) return .{ .size = 0, .files = 0 };
+        self.forgetKinds(tree, node);
         const n = &tree.nodes.items[node];
         const removed: Removed = .{ .size = n.size, .files = n.files };
         n.size = 0;
@@ -1082,6 +1123,13 @@ pub const App = struct {
         }
         self.legend_root = null;
         return removed;
+    }
+
+    /// `node`'s files taken from the top's legend before they go.
+    fn forgetKinds(self: *App, tree: *const scanner.Tree, node: u32) void {
+        if (self.top_kinds) |*sizes| kindsUnder(tree, node, sizes, .subtract) catch {
+            self.top_kinds = null;
+        };
     }
 
     // ---- Watching free space: the tray and the alarm ----
@@ -1443,26 +1491,16 @@ pub const App = struct {
 
     /// The categories under `node`, biggest first (cached for the last one).
     fn legend(self: *App, allocator: std.mem.Allocator, tree: *const scanner.Tree, node: u32) ![]const Legend {
-        if (self.legend_root != node) {
-            self.legend_sizes = @splat(0);
-            var stack: std.ArrayList(u32) = .empty;
-            defer stack.deinit(gpa);
-            try stack.append(gpa, node);
-            while (stack.pop()) |at| {
-                const n = tree.node(at);
-                for (tree.children(at), 0..) |child, i| {
-                    const index = n.first_child + @as(u32, @intCast(i));
-                    switch (child.kind) {
-                        .directory => try stack.append(gpa, index),
-                        .file => self.legend_sizes[@intFromEnum(categories.of(tree.name(index)))] += child.size,
-                        else => {},
-                    }
-                }
+        const sizes = if (node == scanner.Tree.root_index and self.top_kinds != null) &self.top_kinds.? else blk: {
+            if (self.legend_root != node) {
+                self.legend_sizes = @splat(0);
+                try kindsUnder(tree, node, &self.legend_sizes, .add);
+                self.legend_root = node;
             }
-            self.legend_root = node;
-        }
+            break :blk &self.legend_sizes;
+        };
         var out: std.ArrayList(Legend) = .empty;
-        for (self.legend_sizes, 0..) |size, i| {
+        for (sizes, 0..) |size, i| {
             if (size == 0) continue;
             const c = categories.info.get(@enumFromInt(i));
             try out.append(allocator, .{ .name = c.name, .color = try hex(allocator, c.color), .size = size });
@@ -1475,6 +1513,37 @@ pub const App = struct {
         return out.items;
     }
 };
+
+/// The files' sizes under `node` (or `node`, a file) by kind, added to or
+/// taken from `sizes` (what a removal takes away).
+fn kindsUnder(tree: *const scanner.Tree, node: u32, sizes: *[categories.count]u64, how: enum { add, subtract }) error{OutOfMemory}!void {
+    const gpa = std.heap.smp_allocator;
+    const count = struct {
+        fn one(s: *[categories.count]u64, t: *const scanner.Tree, index: u32, size: u64, h: @TypeOf(how)) void {
+            const slot = &s[@intFromEnum(categories.of(t.name(index)))];
+            slot.* = if (h == .add) slot.* + size else slot.* -| size;
+        }
+    }.one;
+    switch (tree.node(node).kind) {
+        .file => return count(sizes, tree, node, tree.node(node).size, how),
+        .directory => {},
+        else => return,
+    }
+    var stack: std.ArrayList(u32) = .empty;
+    defer stack.deinit(gpa);
+    try stack.append(gpa, node);
+    while (stack.pop()) |at| {
+        const n = tree.node(at);
+        for (tree.children(at), 0..) |child, i| {
+            const index = n.first_child + @as(u32, @intCast(i));
+            switch (child.kind) {
+                .directory => try stack.append(gpa, index),
+                .file => count(sizes, tree, index, child.size, how),
+                else => {},
+            }
+        }
+    }
+}
 
 /// The tray's menu: the headroom (a line to read, not choose), then what
 /// can be done from there.

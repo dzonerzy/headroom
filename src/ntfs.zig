@@ -238,7 +238,7 @@ const File = struct {
     reparse: bool = false,
     /// Last written, seconds since 1970 ($STANDARD_INFORMATION's: $FILE_NAME's
     /// times change only with the name).
-    mtime: i64 = 0,
+    mtime: u32 = 0,
 };
 
 const Link = struct { parent: u32, child: u32, name_start: u32, name_len: u16 };
@@ -309,7 +309,7 @@ fn parseRecord(alloc: Allocator, record: []u8, g: Geometry, number: u32, files: 
     while (it.next()) |a| switch (a.kind) {
         AT_STANDARD_INFORMATION => {
             const v = a.value() orelse continue;
-            if (v.len >= 0x10) f.mtime = scan.unixSeconds(std.mem.readInt(i64, v[0x08..0x10], .little));
+            if (v.len >= 0x10) f.mtime = scan.stamp(scan.unixSeconds(std.mem.readInt(i64, v[0x08..0x10], .little)));
         },
         AT_FILE_NAME => {
             const v = a.value() orelse continue;
@@ -376,7 +376,7 @@ fn build(alloc: Allocator, files: []const File, links: []const Link, names: []co
     var tree: scan.Tree = .{ .root = try alloc.dupeSentinel(u8, root_name, 0) };
     errdefer tree.deinit(alloc);
     try tree.names.appendSlice(alloc, root_name);
-    try tree.nodes.append(alloc, .{ .parent = 0, .name_start = 0, .name_len = @intCast(root_name.len), .kind = .directory, .size = files[at].size, .files = 0 });
+    try tree.nodes.append(alloc, .{ .parent = 0, .name_start = 0, .name_len = scan.nameLength(root_name.len), .kind = .directory, .size = files[at].size, .files = 0 });
 
     const counted = try std.DynamicBitSetUnmanaged.initEmpty(alloc, n);
     var seen = counted;

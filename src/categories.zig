@@ -43,37 +43,66 @@ const table = [_]struct { Category, []const []const u8 }{
     .{ .data, &.{ "json", "jsonl", "yaml", "yml", "toml", "xml", "csv", "tsv", "db", "sqlite", "sqlite3", "parquet", "log", "bin", "dat", "pak", "npy", "npz", "pt", "safetensors", "gguf", "onnx", "h5", "pid", "ldb", "etl", "dmp" } },
 };
 
-/// Extension to category, made at compile time: millions of lookups after a
-/// scan (the legend's totals).
+/// An extension of up to 16 bytes, lowercase, as one number.
+const Key = u128;
+
+fn pack(extension: []const u8) ?Key {
+    if (extension.len > 16) return null;
+    var key: Key = 0;
+    for (extension, 0..) |c, i| key |= @as(Key, std.ascii.toLower(c)) << @intCast(i * 8);
+    return key;
+}
+
+const Entry = struct { key: Key, category: Category };
+
+/// Extension to category, sorted by key at compile time: millions of lookups
+/// after a scan (the legend's totals), each a binary search over numbers (a
+/// string map compares the many 3-letter extensions one by one).
 const extensions = blk: {
+    @setEvalBranchQuota(1_000_000);
     var n = 0;
     for (table) |row| n += row[1].len;
-    var pairs: [n]struct { []const u8, Category } = undefined;
+    var entries: [n]Entry = undefined;
     var i = 0;
     for (table) |row| {
         for (row[1]) |ext| {
-            pairs[i] = .{ ext, row[0] };
+            entries[i] = .{ .key = pack(ext).?, .category = row[0] };
             i += 1;
         }
     }
-    @setEvalBranchQuota(100_000);
-    break :blk std.StaticStringMap(Category).initComptime(pairs);
+    std.mem.sort(Entry, &entries, {}, struct {
+        fn less(_: void, l: Entry, r: Entry) bool {
+            return l.key < r.key;
+        }
+    }.less);
+    const sorted = entries;
+    break :blk sorted;
 };
 
 /// The category of a file named `name`.
 pub fn of(name: []const u8) Category {
-    // Windows' memory on disk, not drivers for all their ".sys".
-    for ([_][]const u8{ "pagefile.sys", "hiberfil.sys", "swapfile.sys" }) |memory| {
-        if (std.ascii.eqlIgnoreCase(name, memory)) return .other;
+    // Versioned shared libraries: libLLVM.so.19.1, libz3.so.4. (Dot by dot:
+    // std.mem.indexOf builds a skip table each call, most of the time here.)
+    var from: usize = 0;
+    while (std.mem.indexOfScalarPos(u8, name, from, '.')) |at| : (from = at + 1) {
+        if (std.mem.startsWith(u8, name[at..], ".so.")) return .binaries;
     }
-    // Versioned shared libraries: libLLVM.so.19.1, libz3.so.4.
-    if (std.mem.indexOf(u8, name, ".so.") != null) return .binaries;
     const dot = std.mem.lastIndexOfScalar(u8, name, '.') orelse return .other;
     if (dot == 0 or dot + 1 == name.len) return .other;
-    const extension = name[dot + 1 ..];
-    if (extension.len > 16) return .other;
-    var lower: [16]u8 = undefined;
-    return extensions.get(std.ascii.lowerString(&lower, extension)) orelse .other;
+    const key = pack(name[dot + 1 ..]) orelse return .other;
+    // Windows' memory on disk, not drivers for all their ".sys".
+    if (key == comptime pack("sys").?) for ([_][]const u8{ "pagefile.sys", "hiberfil.sys", "swapfile.sys" }) |memory| {
+        if (std.ascii.eqlIgnoreCase(name, memory)) return .other;
+    };
+    var low: usize = 0;
+    var high: usize = extensions.len;
+    while (low < high) {
+        const mid = (low + high) / 2;
+        const at = extensions[mid].key;
+        if (at == key) return extensions[mid].category;
+        if (at < key) low = mid + 1 else high = mid;
+    }
+    return .other;
 }
 
 test "categories" {
@@ -87,4 +116,12 @@ test "categories" {
     try std.testing.expectEqual(Category.other, of(".gitignore"));
     try std.testing.expectEqual(Category.other, of("Makefile"));
     try std.testing.expectEqual(Category.other, of("trailing."));
+    // Every extension in the table is found, in any case.
+    for (table) |row| for (row[1]) |ext| {
+        var name: [32]u8 = undefined;
+        try std.testing.expectEqual(row[0], of(try std.fmt.bufPrint(&name, "f.{s}", .{ext})));
+        try std.testing.expectEqual(row[0], of(std.ascii.upperString(&name, try std.fmt.bufPrint(&name, "f.{s}", .{ext}))));
+    };
+    try std.testing.expectEqual(Category.other, of("f.lastbuildstatex"));
+    try std.testing.expectEqual(Category.other, of("f.abcdefghijklmnopq"));
 }

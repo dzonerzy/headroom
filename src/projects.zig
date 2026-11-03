@@ -35,6 +35,25 @@ const markers = [_][]const u8{
 /// (seconds since 1970) and that have something to clear, largest first.
 /// Slices in `a` (an arena: nothing is freed one by one).
 pub fn stale(a: std.mem.Allocator, tree: *const scan.Tree, root: u32, finds: []const rules.Find, cutoff: i64) error{OutOfMemory}![]Project {
+    const every = try all(a, tree, root, finds);
+    var kept: usize = 0;
+    for (every) |p| {
+        if (!untouchedSince(p, cutoff)) continue;
+        every[kept] = p;
+        kept += 1;
+    }
+    return every[0..kept];
+}
+
+/// Whether `p` was last touched before `cutoff` (a time known).
+pub fn untouchedSince(p: Project, cutoff: i64) bool {
+    return p.last_touched != 0 and p.last_touched < cutoff;
+}
+
+/// Every project under `root` that has something to clear, however recent,
+/// largest first: the walk once after a scan, stale's cutoffs then only a
+/// filter. Slices in `a` (an arena).
+pub fn all(a: std.mem.Allocator, tree: *const scan.Tree, root: u32, finds: []const rules.Find) error{OutOfMemory}![]Project {
     const n = tree.nodes.items.len;
     // Which nodes are finds that can go, by rule.
     const clearable = try std.DynamicBitSetUnmanaged.initEmpty(a, n);
@@ -87,7 +106,7 @@ pub fn stale(a: std.mem.Allocator, tree: *const scan.Tree, root: u32, finds: []c
 
     var found: std.ArrayList(Project) = .empty;
     for (done.items) |p| {
-        if (p.finds.items.len == 0 or p.newest == 0 or p.newest >= cutoff) continue;
+        if (p.finds.items.len == 0) continue;
         const list = p.finds.items;
         std.mem.sort(u32, list, tree, struct {
             fn larger(t: *const scan.Tree, x: u32, y: u32) bool {

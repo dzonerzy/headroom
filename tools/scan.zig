@@ -81,6 +81,38 @@ pub fn main(init: std.process.Init) !u8 {
         std.debug.print("  {Bi:>10.1}  {s} ({d})\n", .{ sizes[r], rule.title, counts[r] });
     }
 
+    // Projects untouched for six months.
+    const stale_at = std.Io.Clock.awake.now(io);
+    const now = @divFloor(std.Io.Clock.real.now(io).toMilliseconds(), 1000);
+    const old = try headroom.projects.stale(init.arena.allocator(), &tree, scan.Tree.root_index, finds, now - 182 * 24 * 3600);
+    const stale_ms = stale_at.durationTo(std.Io.Clock.awake.now(io)).toMilliseconds();
+    var old_total: u64 = 0;
+    for (old) |p| old_total += p.size;
+    std.debug.print("\nold projects: {Bi:.1} in {d} ({d} ms)\n", .{ old_total, old.len, stale_ms });
+    for (old[0..@min(old.len, 8)]) |p| std.debug.print("  {Bi:>10.1}  {s}\n", .{ p.size, tree.name(p.node) });
+
+    // --map: what showing the top folder costs (the treemap at a big
+    // window's size, the legend's sizes by kind).
+    for (args) |arg| if (std.mem.eql(u8, arg, "--map")) {
+        const layout_at = std.Io.Clock.awake.now(io);
+        var layout = try headroom.treemap.layout(a, &tree, scan.Tree.root_index, .{ .x = 0, .y = 0, .w = 2400, .h = 1300 }, .{});
+        defer layout.deinit(a);
+        const layout_ms = layout_at.durationTo(std.Io.Clock.awake.now(io)).toMilliseconds();
+        const legend_at = std.Io.Clock.awake.now(io);
+        var kinds: [headroom.categories.count]u64 = @splat(0);
+        for (tree.nodes.items, 0..) |n, i| {
+            if (n.kind == .file) kinds[@intFromEnum(headroom.categories.of(tree.name(@intCast(i))))] += n.size;
+        }
+        const legend_ms = legend_at.durationTo(std.Io.Clock.awake.now(io)).toMilliseconds();
+        std.debug.print("\nmap: {d} tiles in {d} ms; legend {d} ms\n", .{ layout.items.items.len, layout_ms, legend_ms });
+        const touch_at = std.Io.Clock.awake.now(io);
+        var sum: usize = 0;
+        for (tree.nodes.items, 0..) |n, i| {
+            if (n.kind == .file) sum +%= tree.name(@intCast(i))[0];
+        }
+        std.debug.print("names touched: {d} ms ({d})\n", .{ touch_at.durationTo(std.Io.Clock.awake.now(io)).toMilliseconds(), sum });
+    };
+
     // --dupes: the duplicate search too.
     for (args) |arg| if (std.mem.eql(u8, arg, "--dupes")) {
         const dupes_at = std.Io.Clock.awake.now(io);

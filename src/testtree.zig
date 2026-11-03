@@ -26,7 +26,7 @@ fn build(a: std.mem.Allocator, root: []const u8, entries: anytype) !scan.Tree {
         const start: u32 = @intCast(tree.names.items.len);
         try tree.names.appendSlice(a, e[1]);
         const mtime: i64 = if (e.len > 4) e[4] else 0;
-        try tree.nodes.append(a, .{ .parent = e[0], .name_start = start, .name_len = @intCast(e[1].len), .kind = e[2], .size = e[3], .files = @intFromBool(e[2] == .file), .mtime = mtime });
+        try tree.nodes.append(a, .{ .parent = e[0], .name_start = start, .name_len = @intCast(e[1].len), .kind = e[2], .size = e[3], .files = @intFromBool(e[2] == .file), .mtime = scan.stamp(mtime) });
         const parent = &tree.nodes.items[e[0]];
         if (parent.child_count == 0) parent.first_child = index;
         parent.child_count += 1;

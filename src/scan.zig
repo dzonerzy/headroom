@@ -28,12 +28,13 @@ pub const Kind = enum(u8) {
     other,
 };
 
+/// 40 bytes: millions of them per scan (a name is 255 characters at most).
 pub const Node = struct {
     parent: u32,
     first_child: u32 = 0,
     child_count: u32 = 0,
     name_start: u32,
-    name_len: u32,
+    name_len: u16,
     kind: Kind,
     /// A directory that could not be read (permissions, removed meanwhile):
     /// what it holds is not counted.
@@ -43,9 +44,24 @@ pub const Node = struct {
     /// Files under it; 1 for a file.
     files: u64,
     /// When it was last written, seconds since 1970 (its own: a folder's is
-    /// when its entries last changed); 0 when unknown.
-    mtime: i64 = 0,
+    /// when its entries last changed); 0 when unknown. See `stamp`.
+    mtime: u32 = 0,
+
+    comptime {
+        if (@sizeOf(Node) != 40) @compileError("a scan's nodes grew");
+    }
 };
+
+/// Seconds since 1970 as a node keeps them: until 2106; before 1970, unknown.
+pub fn stamp(seconds: i64) u32 {
+    return std.math.cast(u32, seconds) orelse if (seconds < 0) 0 else std.math.maxInt(u32);
+}
+
+/// A name's length as a node keeps it (the folder scanned's own, an absolute
+/// path, cut in the unlikely case it is longer).
+pub fn nameLength(len: usize) u16 {
+    return @intCast(@min(len, std.math.maxInt(u16)));
+}
 
 /// A Windows FILETIME (100 ns since 1601) as seconds since 1970.
 pub fn unixSeconds(filetime: i64) i64 {
@@ -170,7 +186,7 @@ pub fn scan(a: Allocator, io: Io, path: []const u8, options: Options) Error!Tree
     var tree: Tree = .{ .root = root };
     errdefer tree.deinit(a);
     try tree.names.appendSlice(a, root);
-    try tree.nodes.append(a, .{ .parent = 0, .name_start = 0, .name_len = @intCast(root.len), .kind = .directory, .size = 0, .files = 0 });
+    try tree.nodes.append(a, .{ .parent = 0, .name_start = 0, .name_len = nameLength(root.len), .kind = .directory, .size = 0, .files = 0 });
 
     var s: Scan = .{ .a = a, .io = io, .tree = &tree, .cancel = options.cancel };
     defer s.deinit();
@@ -217,7 +233,7 @@ pub fn scan(a: Allocator, io: Io, path: []const u8, options: Options) Error!Tree
 const Job = struct { index: u32, path: [:0]u8 };
 
 /// A directory's entry as read, before it is in the tree.
-const Entry = struct { name_start: u32, name_len: u32, kind: Kind, size: u64, mtime: i64 };
+const Entry = struct { name_start: u32, name_len: u16, kind: Kind, size: u64, mtime: u32 };
 
 const Scan = struct {
     a: Allocator,
@@ -438,7 +454,7 @@ fn listWindows(s: *Scan, dir: Io.Dir, entries: *std.ArrayList(Entry), names: *st
                     .name_len = @intCast(names.items.len - start),
                     .kind = kind,
                     .size = if (kind == .link) 0 else @intCast(@max(info.AllocationSize, 0)),
-                    .mtime = unixSeconds(info.LastWriteTime),
+                    .mtime = stamp(unixSeconds(info.LastWriteTime)),
                 });
             }
             if (info.NextEntryOffset == 0) break;
@@ -473,7 +489,7 @@ fn listPosix(s: *Scan, dir: Io.Dir, entries: *std.ArrayList(Entry), names: *std.
         };
         var size: u64 = if (kind == .mount) 0 else found.blocks * 512;
         if (kind == .file and found.nlink > 1 and !try s.firstLink(device(found), found.ino)) size = 0;
-        try entries.append(s.a, .{ .name_start = @intCast(start), .name_len = @intCast(entry.name.len), .kind = kind, .size = size, .mtime = found.mtime.sec });
+        try entries.append(s.a, .{ .name_start = @intCast(start), .name_len = @intCast(entry.name.len), .kind = kind, .size = size, .mtime = stamp(found.mtime.sec) });
     }
 }
 

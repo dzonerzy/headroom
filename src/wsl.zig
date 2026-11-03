@@ -167,7 +167,7 @@ pub fn build(a: Allocator, r: *Io.Reader, root: []const u8, report: ?scan.Report
     try tree.names.appendSlice(a, names.items);
     const base: u32 = @intCast(root.len);
     try tree.nodes.ensureTotalCapacity(a, temps.items.len);
-    tree.nodes.appendAssumeCapacity(.{ .parent = 0, .name_start = 0, .name_len = base, .kind = .directory, .size = 0, .files = 0, .mtime = temps.items[0].mtime });
+    tree.nodes.appendAssumeCapacity(.{ .parent = 0, .name_start = 0, .name_len = scan.nameLength(base), .kind = .directory, .size = 0, .files = 0, .mtime = scan.stamp(temps.items[0].mtime) });
     var queue: std.ArrayList(struct { temp: u32, node: u32 }) = .empty;
     defer queue.deinit(a);
     try queue.append(a, .{ .temp = 0, .node = 0 });
@@ -180,7 +180,7 @@ pub fn build(a: Allocator, r: *Io.Reader, root: []const u8, report: ?scan.Report
         while (child != none) : (child = temps.items[child].next) {
             const t = temps.items[child];
             const node: u32 = @intCast(tree.nodes.items.len);
-            tree.nodes.appendAssumeCapacity(.{ .parent = item.node, .name_start = base + t.name_start, .name_len = t.name_len, .kind = t.kind, .size = t.size, .files = @intFromBool(t.kind == .file), .mtime = t.mtime });
+            tree.nodes.appendAssumeCapacity(.{ .parent = item.node, .name_start = base + t.name_start, .name_len = scan.nameLength(t.name_len), .kind = t.kind, .size = t.size, .files = @intFromBool(t.kind == .file), .mtime = scan.stamp(t.mtime) });
             if (t.kind == .directory) try queue.append(a, .{ .temp = child, .node = node });
             children += 1;
         }
