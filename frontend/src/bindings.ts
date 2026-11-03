@@ -305,6 +305,8 @@ export interface AppErrors {
   home: never;
   space: never;
   startupScan: never;
+  version: never;
+  checksUpdates: never;
   admin: never;
   restartAsAdmin: "Unsupported" | "OutOfMemory" | "Declined";
   intro: never;
@@ -350,6 +352,8 @@ export interface AppBindings {
   home(): string;
   space(arg1: string): Space | null;
   startupScan(): string | null;
+  version(): string;
+  checksUpdates(): boolean;
   admin(): boolean;
   /** Fails with PlumeError<AppErrors["restartAsAdmin"]>. */
   restartAsAdmin(arg1: string): void;
@@ -576,6 +580,12 @@ export const App: AppBindings = {
   },
   startupScan() {
     try { return native.startupScan(); } catch (error) { throw plumeError(error); }
+  },
+  version() {
+    try { return native.version(); } catch (error) { throw plumeError(error); }
+  },
+  checksUpdates() {
+    try { return native.checksUpdates(); } catch (error) { throw plumeError(error); }
   },
   admin() {
     try { return native.admin(); } catch (error) { throw plumeError(error); }

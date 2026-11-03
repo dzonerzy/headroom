@@ -295,6 +295,8 @@ interface AppErrors {
   home: never;
   space: never;
   startupScan: never;
+  version: never;
+  checksUpdates: never;
   admin: never;
   restartAsAdmin: "Unsupported" | "OutOfMemory" | "Declined";
   intro: never;
@@ -340,6 +342,8 @@ interface AppBindings {
   home(): string;
   space(arg1: string): Space | null;
   startupScan(): string | null;
+  version(): string;
+  checksUpdates(): boolean;
   admin(): boolean;
   /** Fails with PlumeError<AppErrors["restartAsAdmin"]>. */
   restartAsAdmin(arg1: string): void;

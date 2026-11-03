@@ -259,6 +259,9 @@ pub const App = struct {
     /// Docker asked through its command line. The UI tests turn it off:
     /// whether Docker is there, running and quick is the machine's.
     docker: bool = true,
+    /// The page asks GitHub for a newer release. Only the application sets
+    /// it (main.zig): tests and tools never reach the network.
+    updates: bool = false,
     /// Counts scans: what a removal was asked about must still be there.
     generation: u32 = 0,
     /// What the rules found in the tree, and those nodes as a set (the map's
@@ -419,6 +422,17 @@ pub const App = struct {
     pub fn startupScan(self: *App) ?[]const u8 {
         defer self.startup_scan = null;
         return self.startup_scan;
+    }
+
+    /// This build's version (plume.json's).
+    pub fn version(self: *App) []const u8 {
+        const app = self.plume_app orelse return "dev";
+        return app.version;
+    }
+
+    /// Whether the page looks for a newer release (on GitHub).
+    pub fn checksUpdates(self: *App) bool {
+        return self.updates;
     }
 
     /// Whether Headroom runs as administrator (root on Linux).

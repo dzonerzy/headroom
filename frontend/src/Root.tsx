@@ -8,6 +8,7 @@ import { ConfirmGroup, SidePanel, type Tab } from "./Reclaim";
 import { ListView, Search } from "./Find";
 import { MachineList } from "./Machine";
 import { DupesList } from "./Dupes";
+import Update from "./Update";
 import type { Changed, Dupes, DupesProgress, Group, Place, Reclaim, Removal, Stale } from "./bindings";
 
 type Phase =
@@ -25,6 +26,7 @@ export default function Root() {
   const [labelsShown, setLabelsShown] = useState(true);
   const map = useRef<HTMLDivElement>(null);
   const home = useRef(App.home());
+  const version = useRef(App.version());
   /** The folder on the map, for laying it out again at a new size. */
   const shown = useRef<number | null>(null);
   const admin = useRef(App.admin());
@@ -416,7 +418,7 @@ export default function Root() {
     <main className="console">
       <header className="deck">
         <div className="deck-row">
-          <h1 className="wordmark">
+          <h1 className="wordmark" title={`Headroom ${version.current}`}>
             <Mark />
             Headroom
             {admin.current && <span className="wordmark-mode">as administrator</span>}
@@ -589,6 +591,7 @@ export default function Root() {
                 Your home folder is <span className="stage-path">{home.current}</span>. Nothing is changed or deleted.
               </p>
             )}
+            <p className="stage-version">Headroom {version.current}</p>
           </div>
         )}
 
@@ -704,6 +707,7 @@ export default function Root() {
           {notice}
         </p>
       )}
+      <Update />
 
       <footer className="rack">
         <ul className="legend" aria-label="What the space is">

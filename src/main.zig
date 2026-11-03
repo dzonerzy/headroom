@@ -22,6 +22,7 @@ pub fn main(init: std.process.Init) !void {
         .startup_scan = @import("elevate.zig").scanArgument(args),
         .settings_path = try settingsPath(init.arena.allocator(), env),
         .data_dir = try dataDir(init.arena.allocator(), env),
+        .updates = true,
     };
     defer state.deinit();
 
@@ -33,6 +34,9 @@ pub fn main(init: std.process.Init) !void {
     app.window().setLayer(&map, Map.draw) catch {
         map.window = null;
     };
+    // "Headroom 1.1.1": which one runs, at a glance (the taskbar's too).
+    var title: [64]u8 = undefined;
+    app.window().setTitle(std.fmt.bufPrint(&title, "Headroom {s}", .{app.version}) catch "Headroom") catch {};
     state.plume_app = app;
     state.events = app.events(App.Events);
     try app.bind("App", App, &state);

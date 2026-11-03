@@ -84,8 +84,10 @@ each is to clear, and clears it.
 ## Download
 
 Releases have a Windows installer (and the executable alone, zipped), and for
-Linux a `.deb`, a `.tar.gz` and an AppImage. Headroom updates itself from the
-releases, checking their signature first.
+Linux a `.deb`, a `.tar.gz` and an AppImage. From 1.1.1 on, Headroom says
+when a new release is out and, when you choose to, updates itself in place,
+checking the release's signature first (1.1.0 and older: download the new
+one).
 
 Windows 10 or 11, or Linux with X11 or Wayland, 64-bit. Nothing else to
 install: the web engine it draws with is inside it.

@@ -291,6 +291,8 @@ test "finding by name, and the list" {
     state.events = h.app.events(App.Events);
     try h.app.bind("App", App, &state);
     try h.open();
+    // The version on the start (no application here: "dev").
+    try h.expectText(".stage-version", "Headroom dev");
     try h.click(".stage .control-main");
     try h.waitFor(".search-field");
 
