@@ -60,7 +60,7 @@ test "what can go: found, listed, deleted" {
     defer h.stop();
     var map: Map = .{ .window = null, .io = std.testing.io };
     defer map.deinit(std.heap.smp_allocator);
-    var state: App = .{ .io = std.testing.io, .home_path = root, .map = &map };
+    var state: App = .{ .io = std.testing.io, .home_path = root, .map = &map, .mft = false };
     defer state.deinit();
     state.events = h.app.events(App.Events);
     try h.app.bind("App", App, &state);
@@ -101,7 +101,7 @@ test "what changed since the last scan" {
     defer h.stop();
     var map: Map = .{ .window = null, .io = std.testing.io };
     defer map.deinit(std.heap.smp_allocator);
-    var state: App = .{ .io = std.testing.io, .home_path = root, .map = &map, .data_dir = data };
+    var state: App = .{ .io = std.testing.io, .home_path = root, .map = &map, .data_dir = data, .mft = false };
     defer state.deinit();
     state.events = h.app.events(App.Events);
     try h.app.bind("App", App, &state);
@@ -136,7 +136,7 @@ test "finding by name, and the list" {
     defer h.stop();
     var map: Map = .{ .window = null, .io = std.testing.io };
     defer map.deinit(std.heap.smp_allocator);
-    var state: App = .{ .io = std.testing.io, .home_path = root, .map = &map };
+    var state: App = .{ .io = std.testing.io, .home_path = root, .map = &map, .mft = false };
     defer state.deinit();
     state.events = h.app.events(App.Events);
     try h.app.bind("App", App, &state);
@@ -172,7 +172,7 @@ test "the tray's popover" {
     defer h.stop();
     var map: Map = .{ .window = null, .io = std.testing.io };
     defer map.deinit(std.heap.smp_allocator);
-    var state: App = .{ .io = std.testing.io, .home_path = root, .map = &map };
+    var state: App = .{ .io = std.testing.io, .home_path = root, .map = &map, .mft = false };
     defer state.deinit();
     state.events = h.app.events(App.Events);
     try h.app.bind("App", App, &state);
@@ -225,7 +225,7 @@ test "scanning a folder, opening one of its folders, going back" {
     // As main.zig does, without the layer (headless).
     var map: Map = .{ .window = null, .io = std.testing.io };
     defer map.deinit(std.heap.smp_allocator);
-    var state: App = .{ .io = std.testing.io, .home_path = root, .map = &map };
+    var state: App = .{ .io = std.testing.io, .home_path = root, .map = &map, .mft = false };
     defer state.deinit();
     state.events = h.app.events(App.Events);
     try h.app.bind("App", App, &state);

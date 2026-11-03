@@ -184,6 +184,9 @@ pub const App = struct {
     legend_sizes: [categories.count]u64 = @splat(0),
     cancel: std.atomic.Value(bool) = .init(false),
     scanning: std.atomic.Value(bool) = .init(false),
+    /// Windows, as administrator: scans read the disk's file table. The UI
+    /// tests turn it off, to check the folder walk whoever runs them.
+    mft: bool = true,
     /// Counts scans: what a removal was asked about must still be there.
     generation: u32 = 0,
     /// What the rules found in the tree, and those nodes as a set (the map's
@@ -349,6 +352,7 @@ pub const App = struct {
         var tree = try scanner.scan(gpa, self.io, path, .{
             .report = .{ .context = self, .call = report },
             .cancel = &self.cancel,
+            .mft = self.mft,
         });
         const ms = start.durationTo(std.Io.Clock.awake.now(self.io)).toMilliseconds();
         // What can go, while still on the scan's thread (tens of ms).
@@ -644,8 +648,10 @@ pub const App = struct {
 
     /// `node` measured again (after something outside Headroom changed it):
     /// the folders above take the difference, and it is drawn as one tile.
+    /// Walked folder by folder: the disk's file table, read from the disk,
+    /// may not have a change of a moment ago yet.
     fn refresh(self: *App, node: u32, generation: u32, path: []const u8) (scanner.Error || error{ NoScan, Stale })!Removed {
-        var again = scanner.scan(gpa, self.io, path, .{}) catch |err| switch (err) {
+        var again = scanner.scan(gpa, self.io, path, .{ .mft = false }) catch |err| switch (err) {
             error.FileNotFound => scanner.Tree{ .root = try gpa.dupeSentinel(u8, path, 0) },
             else => return err,
         };
