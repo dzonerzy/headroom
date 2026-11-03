@@ -6,6 +6,15 @@
 
 <p align="center">See what fills your disk, and what can go.</p>
 
+<p align="center">
+  <a href="https://github.com/dzonerzy/headroom/actions/workflows/ci.yml"><img alt="ci" src="https://github.com/dzonerzy/headroom/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/dzonerzy/headroom/releases"><img alt="version 1.0.0" src="https://img.shields.io/badge/version-1.0.0-52C7A2"></a>
+  <a href="https://github.com/dzonerzy/plume"><img alt="Plume 0.2.1" src="https://img.shields.io/badge/built%20with-Plume%200.2.1-7B5CFF"></a>
+  <a href="https://github.com/dzonerzy/ZeroG"><img alt="ZeroG 0.5.5" src="https://img.shields.io/badge/engine-ZeroG%200.5.5-7B5CFF"></a>
+  <img alt="Zig 0.17" src="https://img.shields.io/badge/Zig-0.17-F7A41D">
+  <img alt="platforms" src="https://img.shields.io/badge/platforms-Windows%20%7C%20Linux-1B1F3B">
+</p>
+
 ![Headroom showing a home folder as a treemap: projects, videos, caches, downloads](docs/map.png)
 
 Headroom reads every file in a folder (or a whole disk) and draws them by
