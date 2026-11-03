@@ -22,10 +22,3 @@ SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
 CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
--------------------------------------------------------------------------------
-This license covers Headroom's own code. Headroom's executables contain the
-ZeroG engine (github.com/dzonerzy/ZeroG), whose WebCore and JavaScriptCore are
-LGPL: whoever distributes them ships ZeroG's THIRD_PARTY_NOTICES.txt and lets
-users relink with a modified engine (ZeroG's relink kit, docs:
-dzonerzy.github.io/ZeroG/guides/licensing/).
