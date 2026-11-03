@@ -91,6 +91,11 @@ jobs:
           # NSIS script there.
           mkdir -p release
           find build/package -maxdepth 1 -type f ! -name '*.nsi' -exec cp {} release/ \;
+          # The engine's notices (WebCore and JavaScriptCore are LGPL), from
+          # the ZeroG package built with; the same on both systems.
+          if [ "$RUNNER_OS" = Linux ]; then
+            cp "$(dirname "$(grep -l '"profile": "minimal"' zig-pkg/*/VERSION.json | head -1)")/THIRD_PARTY_NOTICES.txt" release/
+          fi
           ls -la release
       - uses: actions/upload-artifact@v4
         if: startsWith(github.ref, 'refs/tags/v')

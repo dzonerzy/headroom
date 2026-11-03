@@ -13,6 +13,7 @@
   <a href="https://github.com/dzonerzy/ZeroG"><img alt="ZeroG 0.5.5" src="https://img.shields.io/badge/engine-ZeroG%200.5.5-7B5CFF"></a>
   <img alt="Zig 0.17" src="https://img.shields.io/badge/Zig-0.17-F7A41D">
   <img alt="platforms" src="https://img.shields.io/badge/platforms-Windows%20%7C%20Linux-1B1F3B">
+  <a href="LICENSE"><img alt="license" src="https://img.shields.io/badge/license-BSD--2--Clause-29D3F4"></a>
 </p>
 
 ![Headroom showing a home folder as a treemap: projects, videos, caches, downloads](docs/map.png)
@@ -96,3 +97,11 @@ plume package    # build/package: the installer, the zip, the .deb, ...
 
 `zig build scan -Doptimize=ReleaseFast -- <folder>` runs the scanner and the
 rules alone on a folder and prints what they found and how long it took.
+
+## License
+
+Headroom's code is under the [BSD 2-Clause license](LICENSE). Its executables
+contain the ZeroG engine, whose WebCore and JavaScriptCore are LGPL: each
+release carries the engine's `THIRD_PARTY_NOTICES.txt`, and this repository
+builds Headroom against any ZeroG engine, a modified one included
+([how](https://dzonerzy.github.io/ZeroG/guides/licensing/)).

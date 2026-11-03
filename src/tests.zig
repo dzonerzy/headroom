@@ -162,10 +162,12 @@ test "finding by name, and the list" {
 test "the tray's popover" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
-    try write(tmp.dir, "games/big.pak", 900_000);
-    try write(tmp.dir, "photos/trip.jpg", 400_000);
-    try write(tmp.dir, "notes.md", 60_000);
-    const root = try tmp.dir.realPathFileAlloc(std.testing.io, ".", std.testing.allocator);
+    // In a folder with a name (the popover says "Largest in ada"): the
+    // README's picture is this test's.
+    try write(tmp.dir, "ada/games/big.pak", 900_000);
+    try write(tmp.dir, "ada/photos/trip.jpg", 400_000);
+    try write(tmp.dir, "ada/notes.md", 60_000);
+    const root = try tmp.dir.realPathFileAlloc(std.testing.io, "ada", std.testing.allocator);
     defer std.testing.allocator.free(root);
 
     const h = try plume.testing.Harness.startProject(@import("plume_project"), .{ .page = "tray.html", .width = 340, .height = 540 });
