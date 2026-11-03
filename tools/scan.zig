@@ -15,7 +15,7 @@ pub fn main(init: std.process.Init) !u8 {
         std.debug.print("usage: zig build scan -- <folder|wsl:distribution> [threads]\n", .{});
         return 2;
     }
-    const threads = if (args.len > 2) try std.fmt.parseInt(usize, args[2], 10) else 0;
+    const threads = if (args.len > 2) std.fmt.parseInt(usize, args[2], 10) catch 0 else 0;
     const a = std.heap.smp_allocator;
     const io = init.io;
 
@@ -80,5 +80,19 @@ pub fn main(init: std.process.Init) !u8 {
         if (counts[r] == 0) continue;
         std.debug.print("  {Bi:>10.1}  {s} ({d})\n", .{ sizes[r], rule.title, counts[r] });
     }
+
+    // --dupes: the duplicate search too.
+    for (args) |arg| if (std.mem.eql(u8, arg, "--dupes")) {
+        const dupes_at = std.Io.Clock.awake.now(io);
+        const groups = try headroom.dupes.find(a, io, &tree, scan.Tree.root_index, .{});
+        defer headroom.dupes.free(a, groups);
+        const dupes_ms = dupes_at.durationTo(std.Io.Clock.awake.now(io)).toMilliseconds();
+        var wasted: u64 = 0;
+        for (groups) |g| wasted += g.size * (g.nodes.len - 1);
+        std.debug.print("\nduplicates: {Bi:.1} wasted in {d} files ({d} ms)\n", .{ wasted, groups.len, dupes_ms });
+        for (groups[0..@min(groups.len, 8)]) |g| {
+            std.debug.print("  {Bi:>10.1}  {s} x{d}\n", .{ g.size, tree.name(g.nodes[0]), g.nodes.len });
+        }
+    };
     return 0;
 }

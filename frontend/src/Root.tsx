@@ -7,7 +7,8 @@ import { bin, ConfirmRemove, type Mode } from "./Remove";
 import { ConfirmGroup, SidePanel, type Tab } from "./Reclaim";
 import { ListView, Search } from "./Find";
 import { MachineList } from "./Machine";
-import type { Changed, Group, Place, Reclaim, Removal, Stale } from "./bindings";
+import { DupesList } from "./Dupes";
+import type { Changed, Dupes, DupesProgress, Group, Place, Reclaim, Removal, Stale } from "./bindings";
 
 type Phase =
   | { name: "start" }
@@ -42,6 +43,9 @@ export default function Root() {
   const staleDaysRef = useRef(staleDays);
   staleDaysRef.current = staleDays;
   const [changed, setChanged] = useState<Changed | null>(null);
+  const [dupes, setDupes] = useState<Dupes | null>(null);
+  const [finding, setFinding] = useState(false);
+  const [dupesProgress, setDupesProgress] = useState<DupesProgress | null>(null);
   const [panel, setPanel] = useState(false);
   const [tab, setTab] = useState<Tab>("reclaim");
   const [listing, setListing] = useState(false);
@@ -59,6 +63,7 @@ export default function Root() {
     if (shown.current !== null) show(shown.current);
     setReclaim(App.reclaimable());
     setStale(App.stale(staleDays));
+    setDupes(App.duplicates());
     if (phase.name === "ready" && !phase.scanned.wsl) setSpace(App.space(phase.scanned.path));
   }
 
@@ -192,6 +197,21 @@ export default function Root() {
       ),
     [],
   );
+  useEffect(() => Events.on("duplicates", (progress) => setDupesProgress(progress)), []);
+
+  /** The duplicates in the last scan, read on a worker thread. */
+  async function findDuplicates() {
+    setFinding(true);
+    setDupesProgress(null);
+    try {
+      setDupes(await App.findDuplicates());
+    } catch (error) {
+      const code = error instanceof PlumeError ? String(error.code) : "Failed";
+      if (code !== "Canceled") setNotice(code === "Busy" ? "Wait for the scan to end, then look for duplicates." : `Duplicates could not be found (${code}).`);
+    } finally {
+      setFinding(false);
+    }
+  }
 
   /** `node` on the map, laid out for the map's area as it is now. */
   const show = useCallback((node: number) => {
@@ -279,10 +299,12 @@ export default function Root() {
       setReclaim(App.reclaimable());
       setStale(App.stale(staleDaysRef.current));
       setChanged(App.changed());
+      setDupes(null);
     } else {
       intro();
       setReclaim(null);
       setStale(null);
+      setDupes(null);
       setChanged(null);
       setPanel(false);
       App.showReclaimable(false);
@@ -625,6 +647,20 @@ export default function Root() {
           onGo={goTo}
           onHover={(place) => (place ? App.highlight(place.node) : App.hover(-1, 0))}
           onClose={() => openPanel(false)}
+          dupes={
+            phase.name === "ready" ? (
+              <DupesList
+                dupes={dupes}
+                finding={finding}
+                progress={dupesProgress}
+                busy={groupConfirm?.busy ? groupConfirm.group.id : null}
+                onFind={() => void findDuplicates()}
+                onCancel={() => App.cancelScan()}
+                onClean={(group) => setGroupConfirm({ group, busy: false, error: null })}
+                onGo={goTo}
+              />
+            ) : null
+          }
           machine={{
             label: machineLabel,
             content: (

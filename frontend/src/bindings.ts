@@ -50,6 +50,26 @@ export interface Scanned {
   wsl: boolean;
 }
 
+export interface Dupes {
+  groups: DupeGroup[];
+  wasted: number;
+  generation: number;
+}
+
+export interface DupeGroup {
+  size: number;
+  wasted: number;
+  copies: DupeCopy[];
+}
+
+export interface DupeCopy {
+  node: number;
+  name: string;
+  path: string;
+  parent: number;
+  mtime: number;
+}
+
 export interface Distro {
   name: string;
   disk: string;
@@ -260,6 +280,12 @@ export interface Progress {
   unreadable: number;
 }
 
+export interface DupesProgress {
+  done: number;
+  files: number;
+  bytes: number;
+}
+
 export interface AppErrors {
   disks: "OutOfMemory";
   alarm: never;
@@ -273,6 +299,8 @@ export interface AppErrors {
   intro: never;
   scan: "AccessDenied" | "Canceled" | "OutOfMemory" | "FileNotFound" | "NotDir" | "NoWsl" | "Failed" | "Busy";
   scanDistro: "AccessDenied" | "Canceled" | "OutOfMemory" | "FileNotFound" | "NotDir" | "NoWsl" | "Failed" | "Busy";
+  findDuplicates: "Canceled" | "OutOfMemory" | "Busy" | "NoScan";
+  duplicates: "OutOfMemory";
   cancelScan: never;
   distros: "OutOfMemory";
   compactDistro: "Canceled" | "OutOfMemory" | "NoWsl" | "Failed" | "Busy" | "NotAdmin" | "NotFound";
@@ -285,11 +313,11 @@ export interface AppErrors {
   showReclaimable: never;
   highlight: never;
   removeMany: "Stale" | "NoScan";
-  emptyBin: "AccessDenied" | "Canceled" | "OutOfMemory" | "Stale" | "FileNotFound" | "NotDir" | "Failed" | "NotFound" | "NoScan" | "InUse" | "TrashUnavailable";
+  emptyBin: "AccessDenied" | "Canceled" | "OutOfMemory" | "Stale" | "FileNotFound" | "NotDir" | "Failed" | "NoScan" | "NotFound" | "InUse" | "TrashUnavailable";
   search: "OutOfMemory";
   entries: "OutOfMemory" | "NoScan";
-  removal: "OutOfMemory" | "NotFound" | "NoScan";
-  remove: "AccessDenied" | "OutOfMemory" | "Stale" | "Failed" | "NotFound" | "NoScan" | "InUse" | "TrashUnavailable" | "Refused";
+  removal: "OutOfMemory" | "NoScan" | "NotFound";
+  remove: "AccessDenied" | "OutOfMemory" | "Stale" | "Failed" | "NoScan" | "NotFound" | "InUse" | "TrashUnavailable" | "Refused";
   watching: never;
   setWatching: "Unsupported";
   watchTick: never;
@@ -318,6 +346,10 @@ export interface AppBindings {
   scan(arg1: string): Promise<Scanned>;
   /** Fails with PlumeError<AppErrors["scanDistro"]>. */
   scanDistro(arg1: string): Promise<Scanned>;
+  /** Fails with PlumeError<AppErrors["findDuplicates"]>. */
+  findDuplicates(): Promise<Dupes>;
+  /** Fails with PlumeError<AppErrors["duplicates"]>. */
+  duplicates(): Dupes | null;
   cancelScan(): void;
   /** Fails with PlumeError<AppErrors["distros"]>. */
   distros(): Distro[];
@@ -483,6 +515,7 @@ export interface AppEvents {
   "progress": Progress;
   "request_scan": string;
   "watching": boolean;
+  "duplicates": DupesProgress;
 }
 
 
@@ -544,6 +577,12 @@ export const App: AppBindings = {
   },
   scanDistro(arg1) {
     return native.scanDistro(arg1).catch((error: unknown) => { throw plumeError(error); });
+  },
+  findDuplicates() {
+    return native.findDuplicates().catch((error: unknown) => { throw plumeError(error); });
+  },
+  duplicates() {
+    try { return native.duplicates(); } catch (error) { throw plumeError(error); }
   },
   cancelScan() {
     try { return native.cancelScan(); } catch (error) { throw plumeError(error); }

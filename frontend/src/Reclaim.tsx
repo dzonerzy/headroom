@@ -9,7 +9,7 @@ const risks = {
   careful: "Look before clearing",
 } as const;
 
-export type Tab = "reclaim" | "stale" | "changed" | "machine";
+export type Tab = "reclaim" | "stale" | "dupes" | "changed" | "machine";
 
 /** How old a project must be, in days, to be stale: the choices. */
 export const STALE_AGES = [
@@ -35,6 +35,8 @@ export function SidePanel(props: {
   onGo: (place: Place) => void;
   onHover: (place: Place | null) => void;
   onGoTo: (parent: number, node: number) => void;
+  /** Duplicates: its tab's content (none: no tab). */
+  dupes: ReactNode | null;
   /** WSL and Docker: its tab's label and content (none: no tab). */
   machine: { label: string; content: ReactNode } | null;
 }) {
@@ -48,9 +50,16 @@ export function SidePanel(props: {
         <button className="side-tab" aria-current={tab === "stale" ? "page" : undefined} onClick={() => onTab("stale")}>
           Old projects
         </button>
-        <button className="side-tab" aria-current={tab === "changed" ? "page" : undefined} onClick={() => onTab("changed")}>
-          Changed
-        </button>
+        {props.dupes && (
+          <button className="side-tab" aria-current={tab === "dupes" ? "page" : undefined} onClick={() => onTab("dupes")}>
+            Duplicates
+          </button>
+        )}
+        {(props.changed || tab === "changed") && (
+          <button className="side-tab" aria-current={tab === "changed" ? "page" : undefined} onClick={() => onTab("changed")}>
+            Changed
+          </button>
+        )}
         {machine && (
           <button className="side-tab" aria-current={tab === "machine" ? "page" : undefined} onClick={() => onTab("machine")}>
             {machine.label}
@@ -68,6 +77,8 @@ export function SidePanel(props: {
         )
       ) : tab === "machine" && machine ? (
         machine.content
+      ) : tab === "dupes" && props.dupes ? (
+        props.dupes
       ) : tab === "stale" ? (
         props.stale ? (
           <StaleList {...props} stale={props.stale} />

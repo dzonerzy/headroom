@@ -15,11 +15,12 @@ const rules = @import("rules.zig");
 const projects = @import("projects.zig");
 const wsl = @import("wsl.zig");
 const docker = @import("docker.zig");
+const dupes = @import("dupes.zig");
 const snapshot = @import("snapshot.zig");
 const disk_list = @import("disks.zig");
 
 pub const App = struct {
-    pub const async_methods = .{ "scan", "scanDistro", "remove", "removeMany", "emptyBin", "compactDistro", "dockerUsage", "dockerPrune" };
+    pub const async_methods = .{ "scan", "scanDistro", "remove", "removeMany", "emptyBin", "compactDistro", "dockerUsage", "dockerPrune", "findDuplicates" };
     /// main.zig's, not the page's.
     pub const hidden = .{ "startWatching", "menuChosen", "closing" };
 
@@ -29,6 +30,32 @@ pub const App = struct {
         request_scan: []const u8,
         /// Watching free space was turned on or off (from the tray).
         watching: bool,
+        /// The duplicate search's progress.
+        duplicates: dupes.DupesProgress,
+    };
+
+    /// Files with the same bytes, a megabyte and up, in the last scan.
+    pub const Dupes = struct {
+        groups: []const DupeGroup,
+        /// What removing all copies but one would give back.
+        wasted: u64,
+        generation: u32,
+    };
+
+    pub const DupeGroup = struct {
+        size: u64,
+        wasted: u64,
+        copies: []const DupeCopy,
+    };
+
+    pub const DupeCopy = struct {
+        node: u32,
+        name: []const u8,
+        /// From the folder scanned.
+        path: []const u8,
+        parent: u32,
+        /// Seconds since 1970.
+        mtime: i64,
     };
 
     pub const Progress = struct { files: u64, folders: u64, bytes: u64, unreadable: u64 };
@@ -239,6 +266,8 @@ pub const App = struct {
     data_dir: ?[]const u8 = null,
     changes: ?snapshot.Changes = null,
     changes_arena: ?std.heap.ArenaAllocator = null,
+    /// The last duplicate search's groups (gpa), for the tree of `generation`.
+    duplicate_groups: []const dupes.Group = &.{},
 
     /// Set by main.zig: the tray, notifications and the window are its.
     plume_app: ?*plume.App = null,
@@ -270,6 +299,7 @@ pub const App = struct {
         gpa.free(self.finds);
         self.found.deinit(gpa);
         if (self.changes_arena) |*arena| arena.deinit();
+        dupes.free(gpa, self.duplicate_groups);
         for (self.alarmed.items) |path| gpa.free(path);
         self.alarmed.deinit(gpa);
     }
@@ -445,11 +475,68 @@ pub const App = struct {
             self.changes_arena = c.arena;
             self.changes = c.changes;
         }
+        // The duplicates found were the old tree's.
+        dupes.free(gpa, self.duplicate_groups);
+        self.duplicate_groups = &.{};
         self.generation +%= 1;
         self.root = scanner.Tree.root_index;
         self.legend_root = null;
         self.map.clear();
         return result;
+    }
+
+    /// Files with the same bytes (a megabyte and up) in the last scan, read
+    /// on a worker thread: "duplicates" events while it runs. Cancel with
+    /// cancelScan.
+    pub fn findDuplicates(self: *App, allocator: std.mem.Allocator) error{ NoScan, Busy, Canceled, OutOfMemory }!Dupes {
+        if (self.tree == null) return error.NoScan;
+        // Holds the tree: no scan replaces it meanwhile.
+        if (self.scanning.swap(true, .acq_rel)) return error.Busy;
+        defer self.scanning.store(false, .release);
+        self.cancel.store(false, .monotonic);
+        const Relay = struct {
+            fn call(context: *anyopaque, progress: dupes.DupesProgress) void {
+                const app: *App = @ptrCast(@alignCast(context));
+                if (app.events) |events| events.emit(.duplicates, progress);
+            }
+        };
+        const found = try dupes.find(gpa, self.io, &self.tree.?, scanner.Tree.root_index, .{
+            .report = .{ .context = self, .call = Relay.call },
+            .cancel = &self.cancel,
+        });
+        self.lock.lockUncancelable(self.io);
+        dupes.free(gpa, self.duplicate_groups);
+        self.duplicate_groups = found;
+        self.lock.unlock(self.io);
+        return (try self.duplicates(allocator)).?;
+    }
+
+    /// The last search's duplicates, without what was deleted since; null
+    /// before a search of this scan.
+    pub fn duplicates(self: *App, allocator: std.mem.Allocator) error{OutOfMemory}!?Dupes {
+        self.lock.lockUncancelable(self.io);
+        defer self.lock.unlock(self.io);
+        const tree = &(self.tree orelse return null);
+        var groups: std.ArrayList(DupeGroup) = .empty;
+        var wasted: u64 = 0;
+        for (self.duplicate_groups) |g| {
+            var copies: std.ArrayList(DupeCopy) = .empty;
+            for (g.nodes) |node| {
+                if (tree.node(node).size == 0 or gone(tree, node)) continue;
+                try copies.append(allocator, .{
+                    .node = node,
+                    .name = tree.name(node),
+                    .path = try relative(allocator, tree, node),
+                    .parent = tree.node(node).parent,
+                    .mtime = tree.node(node).mtime,
+                });
+            }
+            if (copies.items.len < 2) continue;
+            const w = g.size * (copies.items.len - 1);
+            wasted += w;
+            try groups.append(allocator, .{ .size = g.size, .wasted = w, .copies = copies.items });
+        }
+        return .{ .groups = groups.items, .wasted = wasted, .generation = self.generation };
     }
 
     fn report(context: *anyopaque, progress: scanner.Progress) void {

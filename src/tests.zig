@@ -24,6 +24,7 @@ test {
     _ = @import("projects.zig");
     _ = @import("wsl.zig");
     _ = @import("docker.zig");
+    _ = @import("dupes.zig");
 }
 
 fn write(dir: std.Io.Dir, path: []const u8, bytes: usize) !void {
@@ -143,6 +144,59 @@ test "old projects: the untouched one listed and cleared, the recent one not" {
     try tmp.dir.access(io, "shop/src/app.js", .{});
     try tmp.dir.access(io, "blog/node_modules/vite/bin.js", .{});
     try h.waitUntil("document.querySelectorAll('.stale-project').length === 0");
+}
+
+test "duplicates: found, one copy removed, the other kept" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const io = std.testing.io;
+    const mb = 1 << 20;
+    // The same 2 MB twice, and a same-size file with other bytes.
+    try write(tmp.dir, "downloads/movie.mkv", 2 * mb);
+    try write(tmp.dir, "backup/movie.mkv", 2 * mb);
+    {
+        var data: [64]u8 = undefined;
+        @memset(&data, 'y');
+        try write(tmp.dir, "other/movie.mkv", 2 * mb);
+        var file = try tmp.dir.openFile(io, "other/movie.mkv", .{ .mode = .read_write });
+        defer file.close(io);
+        try file.writePositionalAll(io, &data, 0);
+    }
+    try scan.setMtime(tmp.dir, io, "downloads/movie.mkv", 1_600_000_000); // the older: kept
+    const root = try tmp.dir.realPathFileAlloc(io, ".", std.testing.allocator);
+    defer std.testing.allocator.free(root);
+
+    const h = try plume.testing.Harness.startProject(@import("plume_project"), .{ .width = 1200, .height = 780 });
+    defer h.stop();
+    var map: Map = .{ .window = null, .io = io };
+    defer map.deinit(std.heap.smp_allocator);
+    var state: App = .{ .io = io, .home_path = root, .map = &map, .mft = false, .docker = false };
+    defer state.deinit();
+    state.events = h.app.events(App.Events);
+    try h.app.bind("App", App, &state);
+    try h.open();
+
+    try h.click(".stage .control-main");
+    try h.waitUntil("document.querySelector('.status')?.textContent.includes('entries scanned') === true");
+    try h.click(".control-machine");
+    try h.waitFor(".side-tabs");
+    try h.evaluate(void, "[...document.querySelectorAll('.side-tab')].find(t => t.textContent === 'Duplicates').click()");
+    try h.click(".dupes-find");
+    try h.waitFor(".dupes-group");
+    try std.testing.expectEqual(@as(u32, 1), try h.evaluate(u32, "document.querySelectorAll('.dupes-group').length"));
+    try std.testing.expectEqual(@as(u32, 2), try h.evaluate(u32, "document.querySelectorAll('.dupes-copy').length"));
+    // The older copy stays, the other is checked.
+    try std.testing.expectEqual(@as(u32, 1), try h.evaluate(u32, "document.querySelectorAll('.dupes-copy input:checked').length"));
+    try shot(h, "dupes");
+
+    try h.click(".stale-all .reclaim-do");
+    try h.waitFor(".dialog");
+    try h.click(".control-danger");
+    try h.waitUntil("document.querySelector('.veil') === null");
+    try tmp.dir.access(io, "downloads/movie.mkv", .{});
+    try std.testing.expectError(error.FileNotFound, tmp.dir.access(io, "backup/movie.mkv", .{}));
+    try tmp.dir.access(io, "other/movie.mkv", .{});
+    try h.waitUntil("document.querySelectorAll('.dupes-group').length === 0");
 }
 
 test "WSL & Docker: the tab, Docker asked once it opens" {

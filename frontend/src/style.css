@@ -1106,7 +1106,7 @@
   .reclaim {
     display: flex;
     flex-direction: column;
-    width: min(27rem, 40vw);
+    width: min(28rem, 42vw);
     min-height: 0;
     overflow: hidden;
     border-left: 1px solid var(--rule);
@@ -1117,6 +1117,8 @@
     display: flex;
     align-items: center;
     gap: 0.1rem;
+    overflow-x: auto;
+    scrollbar-width: none;
     border-bottom: 1px solid var(--rule);
     padding: 0.45rem 0.5rem 0;
   }
@@ -1183,6 +1185,27 @@
 
   .machine-section > .reclaim-empty {
     padding-top: 0.4rem;
+  }
+
+  /* Duplicates: a checkbox beside each copy. */
+  .dupes-copy {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  .dupes-copy input {
+    accent-color: var(--clip);
+  }
+
+  .dupes-progress {
+    color: var(--quiet);
+    font-size: 0.82rem;
+  }
+
+  .dupes-intro {
+    margin: 0;
   }
 
   .machine-note {

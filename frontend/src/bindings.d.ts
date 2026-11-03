@@ -40,6 +40,26 @@ interface Scanned {
   wsl: boolean;
 }
 
+interface Dupes {
+  groups: DupeGroup[];
+  wasted: number;
+  generation: number;
+}
+
+interface DupeGroup {
+  size: number;
+  wasted: number;
+  copies: DupeCopy[];
+}
+
+interface DupeCopy {
+  node: number;
+  name: string;
+  path: string;
+  parent: number;
+  mtime: number;
+}
+
 interface Distro {
   name: string;
   disk: string;
@@ -250,6 +270,12 @@ interface Progress {
   unreadable: number;
 }
 
+interface DupesProgress {
+  done: number;
+  files: number;
+  bytes: number;
+}
+
 interface AppErrors {
   disks: "OutOfMemory";
   alarm: never;
@@ -263,6 +289,8 @@ interface AppErrors {
   intro: never;
   scan: "AccessDenied" | "Canceled" | "OutOfMemory" | "FileNotFound" | "NotDir" | "NoWsl" | "Failed" | "Busy";
   scanDistro: "AccessDenied" | "Canceled" | "OutOfMemory" | "FileNotFound" | "NotDir" | "NoWsl" | "Failed" | "Busy";
+  findDuplicates: "Canceled" | "OutOfMemory" | "Busy" | "NoScan";
+  duplicates: "OutOfMemory";
   cancelScan: never;
   distros: "OutOfMemory";
   compactDistro: "Canceled" | "OutOfMemory" | "NoWsl" | "Failed" | "Busy" | "NotAdmin" | "NotFound";
@@ -275,11 +303,11 @@ interface AppErrors {
   showReclaimable: never;
   highlight: never;
   removeMany: "Stale" | "NoScan";
-  emptyBin: "AccessDenied" | "Canceled" | "OutOfMemory" | "Stale" | "FileNotFound" | "NotDir" | "Failed" | "NotFound" | "NoScan" | "InUse" | "TrashUnavailable";
+  emptyBin: "AccessDenied" | "Canceled" | "OutOfMemory" | "Stale" | "FileNotFound" | "NotDir" | "Failed" | "NoScan" | "NotFound" | "InUse" | "TrashUnavailable";
   search: "OutOfMemory";
   entries: "OutOfMemory" | "NoScan";
-  removal: "OutOfMemory" | "NotFound" | "NoScan";
-  remove: "AccessDenied" | "OutOfMemory" | "Stale" | "Failed" | "NotFound" | "NoScan" | "InUse" | "TrashUnavailable" | "Refused";
+  removal: "OutOfMemory" | "NoScan" | "NotFound";
+  remove: "AccessDenied" | "OutOfMemory" | "Stale" | "Failed" | "NoScan" | "NotFound" | "InUse" | "TrashUnavailable" | "Refused";
   watching: never;
   setWatching: "Unsupported";
   watchTick: never;
@@ -308,6 +336,10 @@ interface AppBindings {
   scan(arg1: string): Promise<Scanned>;
   /** Fails with PlumeError<AppErrors["scanDistro"]>. */
   scanDistro(arg1: string): Promise<Scanned>;
+  /** Fails with PlumeError<AppErrors["findDuplicates"]>. */
+  findDuplicates(): Promise<Dupes>;
+  /** Fails with PlumeError<AppErrors["duplicates"]>. */
+  duplicates(): Dupes | null;
   cancelScan(): void;
   /** Fails with PlumeError<AppErrors["distros"]>. */
   distros(): Distro[];
@@ -473,6 +505,7 @@ interface AppEvents {
   "progress": Progress;
   "request_scan": string;
   "watching": boolean;
+  "duplicates": DupesProgress;
 }
 
 /** The page runtime: events to and from Zig, and the desktop. */

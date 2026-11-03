@@ -4,3 +4,4 @@
 pub const scan = @import("scan.zig");
 pub const rules = @import("rules.zig");
 pub const wsl = @import("wsl.zig");
+pub const dupes = @import("dupes.zig");
