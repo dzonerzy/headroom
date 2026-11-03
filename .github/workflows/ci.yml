@@ -14,7 +14,7 @@ permissions:
 
 env:
   ZIG_VERSION: 0.17.0
-  PLUME_VERSION: 0.2.1
+  PLUME_VERSION: 0.2.2
 
 jobs:
   build:
@@ -87,15 +87,12 @@ jobs:
           PLUME_UPDATE_KEY: ${{ secrets.PLUME_UPDATE_KEY }}
         run: |
           plume package --skip-build
-          # The packages only: plume 0.2.1 leaves its staging folders and the
-          # NSIS script there.
+          # The packages (each holds the engine's notices), and the notices
+          # on the release page too, for the executables uploaded alone (the
+          # same on both systems: once).
           mkdir -p release
-          find build/package -maxdepth 1 -type f ! -name '*.nsi' -exec cp {} release/ \;
-          # The engine's notices (WebCore and JavaScriptCore are LGPL), from
-          # the ZeroG package built with; the same on both systems.
-          if [ "$RUNNER_OS" = Linux ]; then
-            cp "$(dirname "$(grep -l '"profile": "minimal"' zig-pkg/*/VERSION.json | head -1)")/THIRD_PARTY_NOTICES.txt" release/
-          fi
+          cp build/package/* release/
+          if [ "$RUNNER_OS" = Linux ]; then cp build/share/THIRD_PARTY_NOTICES.txt release/; fi
           ls -la release
       - uses: actions/upload-artifact@v4
         if: startsWith(github.ref, 'refs/tags/v')

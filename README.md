@@ -9,7 +9,7 @@
 <p align="center">
   <a href="https://github.com/dzonerzy/headroom/actions/workflows/ci.yml"><img alt="ci" src="https://github.com/dzonerzy/headroom/actions/workflows/ci.yml/badge.svg"></a>
   <a href="https://github.com/dzonerzy/headroom/releases"><img alt="version 1.1.0" src="https://img.shields.io/badge/version-1.1.0-52C7A2"></a>
-  <a href="https://github.com/dzonerzy/plume"><img alt="Plume 0.2.1" src="https://img.shields.io/badge/built%20with-Plume%200.2.1-7B5CFF"></a>
+  <a href="https://github.com/dzonerzy/plume"><img alt="Plume 0.2.2" src="https://img.shields.io/badge/built%20with-Plume%200.2.2-7B5CFF"></a>
   <a href="https://github.com/dzonerzy/ZeroG"><img alt="ZeroG 0.5.5" src="https://img.shields.io/badge/engine-ZeroG%200.5.5-7B5CFF"></a>
   <img alt="Zig 0.17" src="https://img.shields.io/badge/Zig-0.17-F7A41D">
   <img alt="platforms" src="https://img.shields.io/badge/platforms-Windows%20%7C%20Linux-1B1F3B">
@@ -122,7 +122,8 @@ lists the distributions).
 ## License
 
 Headroom's code is under the [BSD 2-Clause license](LICENSE). Its executables
-contain the ZeroG engine, whose WebCore and JavaScriptCore are LGPL: each
-release carries the engine's `THIRD_PARTY_NOTICES.txt`, and this repository
+contain the ZeroG engine, whose WebCore and JavaScriptCore are LGPL: every
+package holds the engine's `THIRD_PARTY_NOTICES.txt` (each release has it
+beside the packages too), and this repository
 builds Headroom against any ZeroG engine, a modified one included
 ([how](https://dzonerzy.github.io/ZeroG/guides/licensing/)).
