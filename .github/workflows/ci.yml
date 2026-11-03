@@ -77,6 +77,9 @@ jobs:
           chmod +x tools-bin/appimagetool.AppImage
           printf '#!/bin/sh\nexec "%s/appimagetool.AppImage" --appimage-extract-and-run "$@"\n' "$PWD/tools-bin" > tools-bin/appimagetool
           chmod +x tools-bin/appimagetool
+      - name: NSIS (Windows, for the installer of releases)
+        if: startsWith(github.ref, 'refs/tags/v') && runner.os == 'Windows'
+        run: choco install nsis -y --no-progress
       - name: Packages (releases)
         if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
@@ -84,12 +87,15 @@ jobs:
           PLUME_UPDATE_KEY: ${{ secrets.PLUME_UPDATE_KEY }}
         run: |
           plume package --skip-build
-          ls -la build/package
+          # The packages only: plume 0.2.1 leaves its staging folders there.
+          mkdir -p release
+          find build/package -maxdepth 1 -type f -exec cp {} release/ \;
+          ls -la release
       - uses: actions/upload-artifact@v4
         if: startsWith(github.ref, 'refs/tags/v')
         with:
           name: packages-${{ runner.os }}
-          path: build/package/*
+          path: release/*
 
   release:
     needs: build
@@ -105,7 +111,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cd out && sha256sum * > SHA256SUMS && cd ..
+          (cd out && sha256sum -- * > SHA256SUMS)
           git fetch --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
           git tag -l --format='%(contents)' "$GITHUB_REF_NAME" > notes.md
           gh release create "$GITHUB_REF_NAME" out/* --title "Headroom ${GITHUB_REF_NAME#v}" --notes-file notes.md --verify-tag
