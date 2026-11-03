@@ -5,18 +5,12 @@ const App = @import("app.zig").App;
 const Map = @import("map.zig").Map;
 
 pub fn main(init: std.process.Init) !void {
-    // The window of plume.json (a native layer under its page), showing the
-    // frontend (built into the binary, or Vite's dev server under plume dev).
-    const app = try plume.App.initProject(@import("plume_project"), init);
-    defer app.deinit();
-
-    // The treemap, drawn by GL under the page.
-    var map: Map = .{ .window = app.window(), .io = init.io };
+    // The treemap (drawn by GL under the page) and the bindings' state, made
+    // before the app so they go after it: app.deinit stops a scan still
+    // running and waits for it, and destroys the window whose layer draws
+    // the map, before either is freed.
+    var map: Map = .{ .window = null, .io = init.io };
     defer map.deinit(std.heap.smp_allocator);
-    app.window().setLayer(&map, Map.draw) catch {
-        map.window = null;
-    };
-
     const env = init.environ_map;
     const home = env.get(if (builtin.os.tag == .windows) "USERPROFILE" else "HOME") orelse "";
     const args = try init.minimal.args.toSlice(init.arena.allocator());
@@ -26,11 +20,20 @@ pub fn main(init: std.process.Init) !void {
         .map = &map,
         // Restarted as administrator: the folder to scan again.
         .startup_scan = @import("elevate.zig").scanArgument(args),
-        .plume_app = app,
         .settings_path = try settingsPath(init.arena.allocator(), env),
         .data_dir = try dataDir(init.arena.allocator(), env),
     };
     defer state.deinit();
+
+    // The window of plume.json (a native layer under its page), showing the
+    // frontend (built into the binary, or Vite's dev server under plume dev).
+    const app = try plume.App.initProject(@import("plume_project"), init);
+    defer app.deinit();
+    map.window = app.window();
+    app.window().setLayer(&map, Map.draw) catch {
+        map.window = null;
+    };
+    state.plume_app = app;
     state.events = app.events(App.Events);
     try app.bind("App", App, &state);
 

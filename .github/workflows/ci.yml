@@ -14,7 +14,7 @@ permissions:
 
 env:
   ZIG_VERSION: 0.17.0
-  PLUME_VERSION: 0.2.0
+  PLUME_VERSION: 0.2.1
 
 jobs:
   build:
